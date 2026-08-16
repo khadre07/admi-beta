@@ -1,0 +1,13 @@
+services:
+  admi:
+    build: .
+    image: admi:latest
+    container_name: admi
+    ports:
+      - "8501:8501"          # accès : http://<ip-serveur>:8501
+    volumes:
+      - admi-data:/data      # persistance (licence, comptes, données saisies)
+    restart: unless-stopped
+
+volumes:
+  admi-data:

@@ -1,0 +1,42 @@
+name: Build ADMI (Windows / Linux / macOS)
+
+# Lancement manuel (onglet Actions -> Run workflow) ou à chaque push.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: ADMI-windows
+          - os: ubuntu-latest
+            name: ADMI-linux
+          - os: macos-13          # Intel
+            name: ADMI-macos-intel
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Installer les dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Construire l'exécutable
+        run: pyinstaller admi.spec --noconfirm
+
+      - name: Publier l'artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: dist
+          if-no-files-found: error

@@ -1,0 +1,21 @@
+# Environnements & caches
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+
+# Artefacts de build (recompilés par PyInstaller / CI)
+build/
+dist/
+*.spec.bak
+ADMI.app/
+
+# Données locales (générées au runtime : démo, licence, comptes)
+data/admi_data.json
+data/license.json
+data/users.json
+
+# Divers
+*.log
+.DS_Store
