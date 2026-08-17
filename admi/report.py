@@ -91,7 +91,7 @@ def build_html_report(db, periode, annee, mois, dept) -> bytes:
                   f"<tbody>{rows}</tbody></table>")
 
     html = f"""<!doctype html><html lang="{i18n.get_lang()}"><head><meta charset="utf-8">
-<title>Rapport ADMI — {_period_label(periode, annee, mois)}</title>
+<title>Rapport AMI — {_period_label(periode, annee, mois)}</title>
 <style>
   body{{margin:0;background:{THEME['bg']};color:{THEME['text']};font-family:'Segoe UI',Arial,sans-serif;padding:32px;}}
   .head{{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid {THEME['accent']};padding-bottom:14px;margin-bottom:22px;}}
@@ -111,7 +111,7 @@ def build_html_report(db, periode, annee, mois, dept) -> bytes:
   @media print{{ body{{background:#fff;color:#111;}} .card,.kpi{{border-color:#ccc;background:#fff;}} }}
 </style></head><body>
   <div class="head">
-    <div><div class="brand"><span class="d">●</span> ADMI</div>
+    <div><div class="brand"><span class="d">●</span> AMI</div>
       <div style="color:{THEME['muted']};font-size:13px">{_t('Rapport de maintenance industrielle')}</div></div>
     <div class="meta"><b>{_t('Période :')}</b> {_period_label(periode, annee, mois)}<br>
       <b>{_t('Périmètre :')}</b> {dept_name}<br><b>{_t('Généré le :')}</b> {date.today().strftime('%d/%m/%Y')}</div>
@@ -120,7 +120,7 @@ def build_html_report(db, periode, annee, mois, dept) -> bytes:
   <div class="card"><div class="ct">{_t('Synthèse par département')}</div>{table_html}</div>
   <div class="grid2">{''.join(chart_html[:4])}</div>
   <div class="grid2">{''.join(chart_html[4:])}</div>
-  <div class="foot">ADMI — {_t('Analyse des Données de Maintenance Industrielle')} · {_t('Rapport de maintenance industrielle · rapport généré automatiquement')}</div>
+  <div class="foot">AMI — {_t('Analyse des Machines Industrielles')} · {_t('Rapport de maintenance industrielle · rapport généré automatiquement')}</div>
 </body></html>"""
     return html.encode("utf-8")
 
@@ -252,7 +252,7 @@ def build_intervention_report(db, interv) -> bytes:
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=18 * mm, bottomMargin=16 * mm,
                             leftMargin=18 * mm, rightMargin=18 * mm, title=_t("Rapport d'intervention"))
     story = [
-        Paragraph(_t("ADMI — Rapport d'intervention"), h1),
+        Paragraph(_t("AMI — Rapport d'intervention"), h1),
         Paragraph(f"{_t('Généré le')} {date.today().strftime('%d/%m/%Y')}", small),
         Spacer(1, 8 * mm),
     ]
@@ -328,10 +328,10 @@ def build_pdf_report(db, periode, annee, mois, dept) -> bytes:
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=16 * mm, bottomMargin=14 * mm,
-                            leftMargin=16 * mm, rightMargin=16 * mm, title="Rapport ADMI")
+                            leftMargin=16 * mm, rightMargin=16 * mm, title="Rapport AMI")
     dept_name = _t("Tous les départements") if dept == "all" else i18n.dept_label(dept, dep(dept)["nom"])
     story = [
-        Paragraph(_t("ADMI — Rapport de maintenance industrielle"), h1),
+        Paragraph(_t("AMI — Rapport de maintenance industrielle"), h1),
         Paragraph(f"{_t('Période :')} <b>{_period_label(periode, annee, mois)}</b> &nbsp;·&nbsp; "
                   f"{_t('Périmètre :')} <b>{dept_name}</b> &nbsp;·&nbsp; "
                   f"{_t('Généré le')} {date.today().strftime('%d/%m/%Y')}", small),

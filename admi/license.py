@@ -1,6 +1,6 @@
-"""Système de licence ADMI (validation hors ligne par code signé HMAC).
+"""Système de licence AMI (validation hors ligne par code signé HMAC).
 
-Un code de licence a la forme ADMI-XXXX-XXXX-XXXX-XXXX. Il encode un numéro de
+Un code de licence a la forme AMI-XXXX-XXXX-XXXX-XXXX. Il encode un numéro de
 série aléatoire signé par une clé secrète intégrée à l'application : seuls les
 codes produits par la commande `licgen` (qui connaît la clé) sont valides.
 """
@@ -29,11 +29,11 @@ def generate_license() -> str:
     raw = serial + _mac(serial)[:5]            # 10 octets
     b32 = base64.b32encode(raw).decode().rstrip("=")   # 16 caractères
     groups = "-".join(b32[i:i + 4] for i in range(0, len(b32), 4))
-    return "ADMI-" + groups
+    return "AMI-" + groups
 
 
 def _decode(code: str):
-    body = (code or "").strip().upper().replace("ADMI-", "").replace("-", "").replace(" ", "")
+    body = (code or "").strip().upper().replace("AMI-", "").replace("ADMI-", "").replace("-", "").replace(" ", "")
     if not body:
         return None
     pad = "=" * ((8 - len(body) % 8) % 8)

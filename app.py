@@ -1,10 +1,11 @@
-"""ADMI — Analyse des Données de Maintenance Industrielle (application Streamlit).
+"""AMI — Analyse des Machines Industrielles (application Streamlit).
 
 Lancement :  streamlit run app.py
 """
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 from datetime import date, datetime, timedelta
@@ -73,7 +74,7 @@ from admi.io_excel import (LABELS, TYPES, apply_import, export_bytes,
                            parse_import, template_bytes)
 from admi.theme import CSS, register_template
 
-st.set_page_config(page_title="ADMI — Maintenance Industrielle",
+st.set_page_config(page_title="AMI — Analyse des Machines Industrielles",
                    page_icon="🏭", layout="wide", initial_sidebar_state="expanded")
 st.markdown(CSS, unsafe_allow_html=True)
 register_template()
@@ -381,7 +382,7 @@ def view_interventions(db):
             st.write("")
             st.download_button(T("⬇ Rapport d'intervention (PDF)"),
                                report.build_intervention_report(db, chosen),
-                               file_name=f"ADMI_intervention_{chosen['date']}.pdf",
+                               file_name=f"AMI_intervention_{chosen['date']}.pdf",
                                mime="application/pdf", width="stretch")
 
     if st.session_state.get("interv_target"):
@@ -435,12 +436,12 @@ def view_import(db):
     with exp:
         section_title("Exporter les données actuelles")
         st.download_button(T("⬇ Exporter en Excel"), export_bytes(db),
-                           file_name="ADMI_export.xlsx",
+                           file_name="AMI_export.xlsx",
                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     with tpl:
         section_title("Modèle d'import")
         st.download_button(T("⬇ Télécharger le modèle Excel"), template_bytes(),
-                           file_name="ADMI_modele_import.xlsx",
+                           file_name="AMI_modele_import.xlsx",
                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
     if not can_edit():
@@ -484,7 +485,7 @@ def view_import(db):
         mode = "append" if mode_label.startswith("Ajouter") else "replace"
         if mode == "replace":
             st.warning("« Remplacer » écrase définitivement, pour chaque type présent dans le fichier, "
-                       "les données déjà enregistrées dans ADMI.")
+                       "les données déjà enregistrées dans AMI.")
         b1, b2 = st.columns([1, 4])
         with b1:
             if st.button("Confirmer l'import", type="primary"):
@@ -774,7 +775,7 @@ def view_alerts(db):
         st.success(T("Configuration enregistrée."))
         st.rerun()
     if st.button(T("Envoyer une alerte de test")):
-        res = alerts.notify(get_alert_config(), "ADMI — Test", T("Ceci est un test d'alerte ADMI."))
+        res = alerts.notify(get_alert_config(), "AMI — Test", T("Ceci est un test d'alerte AMI."))
         if not res:
             st.warning(T("Aucun canal configuré (e-mail ou SMS)."))
         for chan, (ok, msg) in res.items():
@@ -808,7 +809,7 @@ def _nav():
         "Interventions": "Historique des interventions et coûts pièces / main d'œuvre",
         "Énergie": "Suivi par département, administration et services",
         "Rapports": "Générer un rapport complet (HTML / PDF)",
-        "Import / Export": "Alimenter ADMI avec vos données, ou exporter une sauvegarde",
+        "Import / Export": "Alimenter AMI avec vos données, ou exporter une sauvegarde",
         "Paramètres": "Heures de travail de l'usine par département",
         "Alertes": "Alertes e-mail / SMS en cas de panne",
         "Utilisateurs": "Gestion des comptes et des rôles",
@@ -855,11 +856,11 @@ def view_report(db):
         d1, d2 = st.columns(2)
         with d1:
             st.download_button(T("⬇ Télécharger le rapport HTML"), st.session_state.rep_html,
-                               file_name=f"ADMI_rapport_{lab}.html", mime="text/html", width="stretch")
+                               file_name=f"AMI_rapport_{lab}.html", mime="text/html", width="stretch")
         with d2:
             if st.session_state.get("rep_pdf"):
                 st.download_button(T("⬇ Télécharger le rapport PDF"), st.session_state.rep_pdf,
-                                   file_name=f"ADMI_rapport_{lab}.pdf", mime="application/pdf",
+                                   file_name=f"AMI_rapport_{lab}.pdf", mime="application/pdf",
                                    width="stretch")
             else:
                 st.button(T("PDF indisponible"), disabled=True, width="stretch")
@@ -903,8 +904,8 @@ def render_splash():
       @keyframes shimmer {{ to {{ transform:translateX(100%); }} }}
     </style>
     <div class="admi-splash">
-      <div class="logo"><span class="sq"></span>ADMI</div>
-      <div class="sub">Analyse des Données de Maintenance Industrielle</div>
+      <div class="logo"><span class="sq"></span>AMI</div>
+      <div class="sub">{T("Analyse des Machines Industrielles")}</div>
       <div class="ring"></div>
       <div class="dots">{dots}</div>
       <div class="load">Chargement du tableau de bord</div>
@@ -956,7 +957,7 @@ def machine_dialog(db, target):
             rec = {**m, **data} if m else {"id": uid(), **data}
             upsert_record(db, "machines", rec)
             if statut == "En panne" and (m is None or m.get("statut") != "En panne"):
-                _maybe_alert(f"ADMI — {i18n.type_label('En panne')} : {nom.strip()}",
+                _maybe_alert(f"AMI — {i18n.type_label('En panne')} : {nom.strip()}",
                              f"{nom.strip()} · {i18n.dept_label(deptid, dep(deptid)['nom'])}")
             _close_dialog("mach"); st.rerun()
     if delete and m:
@@ -1004,7 +1005,7 @@ def arret_dialog(db, target):
             upsert_record(db, "arrets", rec)
             if a is None and typ == "Panne":
                 mn = db.machine_name(machine_id)
-                _maybe_alert(f"ADMI — {i18n.t('Panne')} : {mn}",
+                _maybe_alert(f"AMI — {i18n.t('Panne')} : {mn}",
                              f"{mn} · {cause.strip() or '—'} · {debut.strftime('%d/%m/%Y %H:%M')}")
             _close_dialog("arret"); st.rerun()
     if delete and a:
@@ -1109,6 +1110,82 @@ def energie_dialog(db, target):
         _close_dialog("energie"); st.rerun()
 
 
+# ---------------------------------------------------------------------------
+# LOGO AMI — SVG vectoriel animé (engrenage + jauge radar + ECG + signal)
+# ---------------------------------------------------------------------------
+_LOGO_NAVY = "#2E5C9E"
+_LOGO_NAVY_D = "#1B3E70"
+_LOGO_CYAN = "#22D3EE"
+_LOGO_CYAN2 = "#38BDF8"
+_LOGO_GOLD = "#C79A3E"
+_LOGO_GRAY = "#7C8AA0"
+
+
+def _arc_path(r, a0, a1, cx=60, cy=60):
+    p0 = (cx + r * math.cos(math.radians(a0)), cy - r * math.sin(math.radians(a0)))
+    p1 = (cx + r * math.cos(math.radians(a1)), cy - r * math.sin(math.radians(a1)))
+    return f"M {p0[0]:.1f} {p0[1]:.1f} A {r} {r} 0 0 0 {p1[0]:.1f} {p1[1]:.1f}"
+
+
+def logo_svg(size=120, animated=True):
+    teeth = "".join(f'<rect x="56.7" y="4.5" width="6.6" height="13" rx="1.6" '
+                    f'transform="rotate({k*30} 60 60)"/>' for k in range(12))
+    ecg_pts = [(22, 60), (41, 60), (46, 60), (49, 55), (52, 60), (55, 41), (60, 81),
+               (64, 49), (67, 60), (73, 60), (98, 60)]
+    ecg = " ".join(f"{x},{y}" for x, y in ecg_pts)
+    gray = _arc_path(33, -70, -18)
+    rx, ry = 60 + 32 * math.cos(math.radians(42)), 60 - 32 * math.sin(math.radians(42))
+    a = (lambda css: css) if animated else (lambda css: "")
+    return f'''<svg viewBox="0 0 120 120" width="{size}" height="{size}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="AMI">
+      <defs><filter id="glow"><feGaussianBlur stdDeviation="1.1" result="b"/>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+      <style>
+        @keyframes spin{{to{{transform:rotate(360deg)}}}}
+        @keyframes draw{{0%{{stroke-dashoffset:280}}55%{{stroke-dashoffset:0}}100%{{stroke-dashoffset:-280}}}}
+        @keyframes sig{{0%,100%{{opacity:.18}}50%{{opacity:1}}}}
+        @keyframes hub{{0%,100%{{opacity:1}}50%{{opacity:.55}}}}
+        .gear{{transform-origin:60px 60px;{a("animation:spin 26s linear infinite;")}}}
+        .sweep{{transform-origin:60px 60px;{a("animation:spin 4.6s linear infinite;")}}}
+        .ecg{{stroke-dasharray:280;{a("animation:draw 2.8s linear infinite;")}}}
+        .s1{{{a("animation:sig 1.7s ease-in-out infinite;")}}}
+        .s2{{{a("animation:sig 1.7s ease-in-out .22s infinite;")}}}
+        .s3{{{a("animation:sig 1.7s ease-in-out .44s infinite;")}}}
+        .hub{{{a("animation:hub 1.7s ease-in-out infinite;")}}}
+      </style>
+      <g class="gear" fill="{_LOGO_NAVY}"><circle cx="60" cy="60" r="43.5" fill="none"
+         stroke="{_LOGO_NAVY}" stroke-width="12"/>{teeth}</g>
+      <circle cx="60" cy="60" r="37" fill="#0A1220"/>
+      <circle cx="60" cy="60" r="32" fill="none" stroke="{_LOGO_GOLD}" stroke-width="2.4"
+              stroke-dasharray="150 62" transform="rotate(-96 60 60)"/>
+      <path d="{gray}" fill="none" stroke="{_LOGO_GRAY}" stroke-width="2.4" stroke-linecap="round"/>
+      <g class="sweep"><line x1="60" y1="60" x2="{rx:.1f}" y2="{ry:.1f}"
+         stroke="{_LOGO_CYAN}" stroke-width="2" stroke-linecap="round" filter="url(#glow)"/></g>
+      <g fill="none" stroke="{_LOGO_CYAN2}" stroke-width="2.6" stroke-linecap="round" filter="url(#glow)">
+        <path class="s1" d="{_arc_path(13, 18, 66)}"/>
+        <path class="s2" d="{_arc_path(20, 18, 66)}"/>
+        <path class="s3" d="{_arc_path(27, 18, 66)}"/></g>
+      <polyline class="ecg" points="{ecg}" fill="none" stroke="{_LOGO_CYAN}" stroke-width="2.7"
+                stroke-linejoin="round" stroke-linecap="round" filter="url(#glow)"/>
+      <circle class="hub" cx="60" cy="60" r="5.6" fill="{_LOGO_NAVY}" stroke="{_LOGO_CYAN}" stroke-width="1.4"/>
+      <circle cx="60" cy="60" r="2.4" fill="{_LOGO_CYAN}"/>
+    </svg>'''
+
+
+def logo_wordmark(size=46):
+    """Texte « AMI » façon logo : A avec sommet cyan, MI clairs."""
+    return (f'<div style="font-family:\'Oswald\',sans-serif; font-weight:700; font-size:{size}px; '
+            f'letter-spacing:.14em; display:flex; align-items:center; line-height:1;">'
+            f'<span style="color:{_LOGO_CYAN}">A</span>'
+            f'<span style="color:{THEME["text"]}">MI</span></div>')
+
+
+def logo_block(label, mark=134):
+    return (f'<div style="display:flex; flex-direction:column; align-items:center; gap:10px;">'
+            f'{logo_svg(mark)}{logo_wordmark(44)}'
+            f'<div style="color:{THEME["muted2"]}; font-size:11px; letter-spacing:.18em; '
+            f'text-transform:uppercase; margin-top:2px;">{T(label)}</div></div>')
+
+
 def gears_html(label="Chargement", small=False):
     """Animation d'engrenages industriels ADMI (CSS pur)."""
     sz = 0.8 if small else 1.0
@@ -1145,7 +1222,7 @@ def gears_html(label="Chargement", small=False):
     </style>
     <div class="admi-mach">
       <div class="cluster"><div class="gear g1"></div><div class="gear g2"></div><div class="gear g3"></div></div>
-      <div class="word"><span>A</span><span>D</span><span>M</span><span>I</span></div>
+      <div class="word"><span>A</span><span>M</span><span>I</span></div>
       <div class="dots">{dots}</div>
       <div class="lbl">{T(label)}</div>
     </div>
@@ -1166,8 +1243,11 @@ def _lang_toggle():
 
 
 def render_section_loader():
-    st.markdown(f'<div style="min-height:50vh; display:flex; align-items:center; justify-content:center">'
-                f'{gears_html("Chargement", small=True)}</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div style="min-height:50vh; display:flex; flex-direction:column; align-items:center; '
+        'justify-content:center; gap:10px">' + logo_svg(84)
+        + f'<div style="color:{THEME["muted2"]}; font-size:11px; letter-spacing:.18em; '
+          f'text-transform:uppercase">{T("Chargement")}</div></div>', unsafe_allow_html=True)
 
 
 def _hide_chrome_css():
@@ -1180,17 +1260,17 @@ def _hide_chrome_css():
 def render_license_screen():
     _hide_chrome_css()
     _lang_toggle()
-    st.markdown(f'<div style="display:flex;justify-content:center;margin-top:2vh">{gears_html("Activation requise")}</div>',
+    st.markdown(f'<div style="display:flex;justify-content:center;margin-top:2vh">{logo_block("Activation requise")}</div>',
                 unsafe_allow_html=True)
     col = st.columns([1, 1.25, 1])[1]
     en = _lang() == "en"
     with col:
         st.markdown("### " + T("Licence d'utilisation"))
-        st.caption("Enter your ADMI license code to activate the software (provided by your reseller, generated with `licgen`)."
+        st.caption("Enter your AMI license code to activate the software (provided by your reseller, generated with `licgen`)."
                    if en else
-                   "Entrez votre code de licence ADMI pour activer le logiciel. "
+                   "Entrez votre code de licence AMI pour activer le logiciel. "
                    "Un code est fourni par votre revendeur (généré via `licgen`).")
-        code = st.text_input(T("Code de licence"), placeholder="ADMI-XXXX-XXXX-XXXX-XXXX", key="lic_code")
+        code = st.text_input(T("Code de licence"), placeholder="AMI-XXXX-XXXX-XXXX-XXXX", key="lic_code")
         name = st.text_input(T("Nom / société (optionnel)"), key="lic_name")
         if st.button(T("Activer la licence"), type="primary", width="stretch"):
             if lic.activate(code, name.strip()):
@@ -1203,7 +1283,7 @@ def render_license_screen():
 def render_login_screen():
     _hide_chrome_css()
     _lang_toggle()
-    st.markdown(f'<div style="display:flex;justify-content:center;margin-top:2vh">{gears_html("Connexion")}</div>',
+    st.markdown(f'<div style="display:flex;justify-content:center;margin-top:2vh">{logo_block("Connexion")}</div>',
                 unsafe_allow_html=True)
     col = st.columns([1, 1.25, 1])[1]
     en = _lang() == "en"
@@ -1238,7 +1318,7 @@ def main():
         ph = st.empty()
         with ph.container():
             st.markdown('<div style="min-height:70vh; display:flex; align-items:center; '
-                        f'justify-content:center">{gears_html("Démarrage du tableau de bord")}</div>',
+                        f'justify-content:center">{logo_block("Démarrage du tableau de bord")}</div>',
                         unsafe_allow_html=True)
         time.sleep(1.1)
         st.session_state.booted = True
@@ -1249,8 +1329,9 @@ def main():
     lbl = {"en": "Machines: {m} · stops: {a} · interventions: {i}",
            "fr": "{m} machines · {a} arrêts · {i} interventions"}[_lang()]
     with st.sidebar:
-        st.markdown(f'<div class="admi-brand"><span class="dot"></span>ADMI</div>'
-                    f'<div class="admi-sub">{T("Maintenance Industrielle")}</div>', unsafe_allow_html=True)
+        st.markdown('<div class="admi-brand">' + logo_svg(34) + 'AMI</div>'
+                    + f'<div class="admi-sub" style="margin-left:43px">{T("Machines Industrielles")}</div>',
+                    unsafe_allow_html=True)
         st.write("")
         choice = st.radio("Navigation", list(SECTIONS.keys()), format_func=T,
                           label_visibility="collapsed")

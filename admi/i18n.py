@@ -31,7 +31,7 @@ _EN = {
     "Historique des interventions et coûts pièces / main d'œuvre": "Intervention history and parts / labor costs",
     "Suivi par département, administration et services": "Tracking by department, administration and services",
     "Générer un rapport complet (HTML / PDF)": "Generate a full report (HTML / PDF)",
-    "Alimenter ADMI avec vos données, ou exporter une sauvegarde": "Feed ADMI with your data, or export a backup",
+    "Alimenter AMI avec vos données, ou exporter une sauvegarde": "Feed AMI with your data, or export a backup",
     "Heures de travail de l'usine par département": "Plant working hours by department",
     "Gestion des comptes et des rôles": "Accounts and roles management",
     # Titres de section
@@ -105,7 +105,8 @@ _EN = {
     "Nom / société (optionnel)": "Name / company (optional)",
     "Identifiant": "Username", "Mot de passe": "Password",
     "Maintenance Industrielle": "Industrial Maintenance",
-    "Analyse des Données de Maintenance Industrielle": "Industrial Maintenance Data Analysis",
+    "Machines Industrielles": "Industrial Machines",
+    "Analyse des Machines Industrielles": "Industrial Machines Analysis",
     # Rôles / utilisateurs
     "Rôle": "Role", "Nouveau mot de passe": "New password", "Utilisateur": "User",
     "admin": "admin", "operator": "operator", "viewer": "viewer",
@@ -123,7 +124,7 @@ _EN = {
     "Aucun arrêt sur ce filtre.": "No downtime for this filter.",
     # Rapports
     "Rapport de maintenance industrielle": "Industrial maintenance report",
-    "ADMI — Rapport de maintenance industrielle": "ADMI — Industrial maintenance report",
+    "AMI — Rapport de maintenance industrielle": "AMI — Industrial maintenance report",
     "Rapport de maintenance industrielle · rapport généré automatiquement":
         "Industrial maintenance report · automatically generated",
     "Période :": "Period:", "Périmètre :": "Scope:", "Généré le :": "Generated on:",
@@ -135,7 +136,7 @@ _EN = {
     "Tendance de disponibilité (%)": "Availability trend (%)",
     "Énergie par département (kWh)": "Energy by department (kWh)",
     # Rapport d'intervention
-    "ADMI — Rapport d'intervention": "ADMI — Intervention report",
+    "AMI — Rapport d'intervention": "AMI — Intervention report",
     "Rapport d'intervention": "Intervention report",
     "Date": "Date", "Durée": "Duration", "Travaux réalisés": "Work performed",
     "Pièces changées / réparées": "Parts replaced / repaired",
@@ -176,7 +177,7 @@ _EN = {
     "Numéros SMS (séparés par des virgules)": "SMS numbers (comma-separated)",
     "Enregistrer la configuration": "Save configuration", "Configuration enregistrée.": "Configuration saved.",
     "Envoyer une alerte de test": "Send a test alert",
-    "Ceci est un test d'alerte ADMI.": "This is an ADMI test alert.",
+    "Ceci est un test d'alerte AMI.": "This is an AMI test alert.",
     "Aucun canal configuré (e-mail ou SMS).": "No channel configured (email or SMS).",
     # En-têtes de tableaux & champs
     "Puissance (kW)": "Power (kW)", "Mise en service": "Commissioned", "Dépt.": "Dept.",

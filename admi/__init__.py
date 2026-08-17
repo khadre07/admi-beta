@@ -1,3 +1,3 @@
-"""ADMI — Analyse des Données de Maintenance Industrielle (version Python)."""
+"""AMI — Analyse des Machines Industrielles (version Python)."""
 
 __version__ = "1.0.0"

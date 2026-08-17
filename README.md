@@ -1,6 +1,6 @@
 <div align="center">
 
-# ⚙️ ADMI — Analyse des Données de Maintenance Industrielle
+# ⚙️ AMI — Analyse des Machines Industrielles
 
 **Tableau de bord de maintenance industrielle** — indicateurs (disponibilité, MTBF, MTTR),
 graphiques interactifs, planning, saisie des données et génération de rapports.
