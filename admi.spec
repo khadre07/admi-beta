@@ -14,8 +14,9 @@ datas, binaries, hiddenimports = [], [], []
 #  sont pas vus par l'analyse de launch.py, d'où la collecte explicite.)
 PACKAGES = [
     "streamlit", "streamlit_calendar", "plotly", "pandas", "numpy",
-    "openpyxl", "pymupdf", "docx", "reportlab", "narwhals", "altair",
-    "pyarrow", "pydeck", "tornado", "watchdog", "dateutil", "pytz", "jinja2",
+    "openpyxl", "pymupdf", "docx", "reportlab", "sqlalchemy", "narwhals",
+    "altair", "pyarrow", "pydeck", "tornado", "watchdog", "dateutil",
+    "pytz", "jinja2",
 ]
 for pkg in PACKAGES:
     try:
@@ -43,6 +44,7 @@ hiddenimports += [
     "reportlab.graphics.charts.linecharts",
     "reportlab.graphics.charts.legends",
     "reportlab.graphics.renderPDF",
+    "sqlalchemy.dialects.sqlite",
 ]
 
 # Code source de l'application (importé/exécuté à l'exécution, via sys.path).

@@ -11,8 +11,10 @@ dist/
 *.spec.bak
 ADMI.app/
 
-# Données locales (générées au runtime : démo, licence, comptes)
+# Données locales (générées au runtime : base SQLite, démo, licence, comptes)
+data/admi.db
 data/admi_data.json
+data/*.migrated
 data/license.json
 data/users.json
 

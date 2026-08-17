@@ -78,6 +78,18 @@ Connexion par défaut : **`admin` / `admin`** — à changer :
 
 ---
 
+## 🗄️ Stockage des données
+
+Les données sont dans une **base SQLite** par défaut (`admi.db`, transactionnelle,
+migre automatiquement l'ancien format JSON au premier lancement). Pour un serveur
+**multi‑utilisateurs**, basculez sur **PostgreSQL** sans changer le code, via une
+variable d'environnement :
+
+```bash
+export DATABASE_URL="postgresql+psycopg2://user:pwd@host:5432/admi"
+pip install psycopg2-binary
+```
+
 ## 📦 Déploiement multi‑plateforme
 
 Voir **[DEPLOIEMENT.md](DEPLOIEMENT.md)** pour le détail. En résumé :
@@ -101,6 +113,7 @@ admi/
   config.py     départements, couleurs, types, thème
   data.py       modèle, générateur de démo, persistance (cross‑platform)
   kpis.py       calculs (disponibilité, MTBF, MTTR, tendance…)
+  db.py         couche de stockage SQLAlchemy (SQLite / PostgreSQL)
   charts.py     graphiques Plotly (thème sombre)
   report.py     rapports HTML + PDF (global et par intervention)
   io_excel.py   import/export Excel · Word · PDF

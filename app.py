@@ -16,7 +16,8 @@ from streamlit_calendar import calendar as st_calendar
 from admi import auth, charts, kpis, license as lic, report
 from admi.config import (DEPARTEMENTS, DOW, MOIS, STATUTS_MACHINE, THEME,
                          TYPES_ARRET, TYPES_INTERV, TYPES_PLAN, dep)
-from admi.data import DATA_FILE, load_db, save_db, uid
+from admi.data import (DATA_FILE, delete_record, load_db, save_db,
+                       save_settings, uid, upsert_record)
 
 
 def _machine_opts(db):
@@ -531,16 +532,14 @@ def planning_dialog(db, target):
             base = {"machineId": machine_id, "departementId": db.machine_dept(machine_id),
                     "titre": titre.strip(), "type": ptype, "statut": statut, "description": desc.strip()}
             if mode == "edit" and p:
-                p.update({**base, "date": d.isoformat()})
+                upsert_record(db, "planning", {**p, **base, "date": d.isoformat()})
             else:
                 for dd in _repeat_dates(d, repeat):
-                    db.planning.append({"id": uid(), **base, "date": dd.isoformat()})
-            save_db(db)
+                    upsert_record(db, "planning", {"id": uid(), **base, "date": dd.isoformat()})
             st.session_state.plan_target = None
             st.rerun()
     if mode == "edit" and p and b2.button("Supprimer", width="stretch"):
-        db.planning = [x for x in db.planning if x["id"] != p["id"]]
-        save_db(db)
+        delete_record(db, "planning", p["id"])
         st.session_state.plan_target = None
         st.rerun()
     if b3.button("Annuler", width="stretch"):
@@ -612,7 +611,7 @@ def view_settings(db):
                 s = db.dept_schedule(did)
                 s["heuresParJour"] = h
                 s["jours"] = list(days)
-            save_db(db)
+            save_settings(db)
             st.success("Horaires enregistrés — la disponibilité, le MTBF et le MTTR en tiennent compte.")
 
 
@@ -782,14 +781,12 @@ def machine_dialog(db, target):
         else:
             data = {"nom": nom.strip(), "departementId": deptid, "puissanceKW": kw,
                     "dateMES": mes.isoformat(), "statut": statut}
-            if m:
-                m.update(data)
-            else:
-                db.machines.append({"id": uid(), **data})
-            save_db(db); _close_dialog("mach"); st.rerun()
+            rec = {**m, **data} if m else {"id": uid(), **data}
+            upsert_record(db, "machines", rec)
+            _close_dialog("mach"); st.rerun()
     if delete and m:
-        db.machines = [x for x in db.machines if x["id"] != m["id"]]
-        save_db(db); _close_dialog("mach"); st.rerun()
+        delete_record(db, "machines", m["id"])
+        _close_dialog("mach"); st.rerun()
     if cancel:
         _close_dialog("mach"); st.rerun()
 
@@ -828,14 +825,12 @@ def arret_dialog(db, target):
             data = {"machineId": machine_id, "departementId": db.machine_dept(machine_id), "type": typ,
                     "cause": cause.strip(), "dateDebut": debut.strftime("%Y-%m-%dT%H:%M"),
                     "dateFin": fin.strftime("%Y-%m-%dT%H:%M"), "description": desc.strip()}
-            if a:
-                a.update(data)
-            else:
-                db.arrets.append({"id": uid(), **data})
-            save_db(db); _close_dialog("arret"); st.rerun()
+            rec = {**a, **data} if a else {"id": uid(), **data}
+            upsert_record(db, "arrets", rec)
+            _close_dialog("arret"); st.rerun()
     if delete and a:
-        db.arrets = [x for x in db.arrets if x["id"] != a["id"]]
-        save_db(db); _close_dialog("arret"); st.rerun()
+        delete_record(db, "arrets", a["id"])
+        _close_dialog("arret"); st.rerun()
     if cancel:
         _close_dialog("arret"); st.rerun()
 
@@ -900,14 +895,12 @@ def interv_dialog(db, target):
         data = {"machineId": machine_id, "departementId": db.machine_dept(machine_id),
                 "date": idate.isoformat(), "type": typ, "technicien": tech.strip(),
                 "duree": duree, "coutMainOeuvre": cout_mo, "description": desc.strip(), "pieces": pieces}
-        if it:
-            it.update(data)
-        else:
-            db.interventions.append({"id": uid(), **data})
-        save_db(db); _close_dialog("interv"); st.rerun()
+        rec = {**it, **data} if it else {"id": uid(), **data}
+        upsert_record(db, "interventions", rec)
+        _close_dialog("interv"); st.rerun()
     if delete and it:
-        db.interventions = [x for x in db.interventions if x["id"] != it["id"]]
-        save_db(db); _close_dialog("interv"); st.rerun()
+        delete_record(db, "interventions", it["id"])
+        _close_dialog("interv"); st.rerun()
     if cancel:
         _close_dialog("interv"); st.rerun()
 
@@ -927,14 +920,12 @@ def energie_dialog(db, target):
     if save:
         data = {"departementId": dept, "mois": MOIS.index(mois), "annee": int(annee),
                 "kwh": kwh, "montant": montant}
-        if e:
-            e.update(data)
-        else:
-            db.energie.append({"id": uid(), **data})
-        save_db(db); _close_dialog("energie"); st.rerun()
+        rec = {**e, **data} if e else {"id": uid(), **data}
+        upsert_record(db, "energie", rec)
+        _close_dialog("energie"); st.rerun()
     if delete and e:
-        db.energie = [x for x in db.energie if x["id"] != e["id"]]
-        save_db(db); _close_dialog("energie"); st.rerun()
+        delete_record(db, "energie", e["id"])
+        _close_dialog("energie"); st.rerun()
     if cancel:
         _close_dialog("energie"); st.rerun()
 

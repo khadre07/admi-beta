@@ -103,23 +103,80 @@ class Database:
 
 
 # ---------------------------------------------------------------------------
-# Persistance
+# Persistance (SQLite par défaut, PostgreSQL via DATABASE_URL — voir admi/db.py)
+# Import paresseux de la couche db pour éviter un cycle d'import.
 # ---------------------------------------------------------------------------
-def save_db(db: Database, path: Path = DATA_FILE) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(db.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+def _dbmod():
+    from . import db as _db
+    return _db
 
 
-def load_db(path: Path = DATA_FILE) -> Database:
-    """Charge le fichier JSON, ou génère des données de démo s'il est absent."""
-    if path.exists():
+def save_db(db: Database) -> None:
+    """Écrit l'intégralité de l'état (utilisé pour l'import et l'amorçage démo)."""
+    d = _dbmod()
+    for name in ("machines", "arrets", "energie", "interventions", "planning"):
+        d.replace_all(name, getattr(db, name))
+    d.set_setting("settings", db.settings)
+
+
+def save_settings(db: Database) -> None:
+    _dbmod().set_setting("settings", db.settings)
+
+
+def upsert_record(db: Database, table: str, rec: dict) -> dict:
+    """Ajoute ou met à jour UNE ligne (en mémoire + en base, transactionnel)."""
+    lst = getattr(db, table)
+    for i, x in enumerate(lst):
+        if x["id"] == rec["id"]:
+            lst[i] = rec
+            break
+    else:
+        lst.append(rec)
+    _dbmod().upsert(table, rec)
+    return rec
+
+
+def delete_record(db: Database, table: str, rid: str) -> None:
+    setattr(db, table, [x for x in getattr(db, table) if x["id"] != rid])
+    _dbmod().delete(table, rid)
+
+
+def _load_json_legacy():
+    """Lit l'ancien fichier JSON (pour migration), sinon None."""
+    if DATA_FILE.exists():
         try:
-            return Database.from_dict(json.loads(path.read_text(encoding="utf-8")))
+            return Database.from_dict(json.loads(DATA_FILE.read_text(encoding="utf-8")))
         except (json.JSONDecodeError, OSError):
-            pass
-    db = generate_demo()
-    save_db(db, path)
-    return db
+            return None
+    return None
+
+
+def load_db() -> Database:
+    """Charge depuis la base. Première fois : migre l'ancien JSON s'il existe,
+    sinon génère des données de démo."""
+    d = _dbmod()
+    d.engine()  # crée les tables si nécessaire
+    if d.is_empty():
+        migrated = _load_json_legacy()
+        db = migrated if migrated else generate_demo()
+        save_db(db)
+        if migrated and DATA_FILE.exists():
+            try:
+                DATA_FILE.rename(DATA_FILE.with_name(DATA_FILE.name + ".migrated"))
+            except OSError:
+                pass
+        return db
+    settings = d.get_settings().get("settings") or {"tempsTravail": {}}
+    if "tempsTravail" not in settings:
+        settings = {"tempsTravail": {}}
+    return Database(
+        machines=d.list_records("machines"),
+        arrets=d.list_records("arrets"),
+        energie=d.list_records("energie"),
+        interventions=d.list_records("interventions"),
+        planning=d.list_records("planning"),
+        settings=settings,
+    )
 
 
 # ---------------------------------------------------------------------------

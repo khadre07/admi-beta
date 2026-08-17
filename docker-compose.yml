@@ -6,8 +6,21 @@ services:
     ports:
       - "8501:8501"          # accès : http://<ip-serveur>:8501
     volumes:
-      - admi-data:/data      # persistance (licence, comptes, données saisies)
+      - admi-data:/data      # persistance : base SQLite (admi.db), licence, comptes
+    # Multi-utilisateurs intensif ? Basculez sur PostgreSQL en décommentant :
+    # environment:
+    #   DATABASE_URL: "postgresql+psycopg2://admi:motdepasse@db:5432/admi"
+    # depends_on: [db]
     restart: unless-stopped
+
+  # db:                        # PostgreSQL optionnel (voir DATABASE_URL ci-dessus)
+  #   image: postgres:16
+  #   environment:
+  #     POSTGRES_USER: admi
+  #     POSTGRES_PASSWORD: motdepasse
+  #     POSTGRES_DB: admi
+  #   volumes: [pg-data:/var/lib/postgresql/data]
 
 volumes:
   admi-data:
+  # pg-data:
