@@ -123,6 +123,16 @@ def save_settings(db: Database) -> None:
     _dbmod().set_setting("settings", db.settings)
 
 
+def get_alert_config() -> dict:
+    from . import alerts
+    stored = _dbmod().get_settings().get("alerts")
+    return stored or alerts.default_config()
+
+
+def save_alert_config(cfg: dict) -> None:
+    _dbmod().set_setting("alerts", cfg)
+
+
 def upsert_record(db: Database, table: str, rec: dict) -> dict:
     """Ajoute ou met à jour UNE ligne (en mémoire + en base, transactionnel)."""
     lst = getattr(db, table)

@@ -13,11 +13,12 @@ import streamlit as st
 import streamlit.components.v1 as components
 from streamlit_calendar import calendar as st_calendar
 
-from admi import auth, charts, i18n, kpis, license as lic, report, update
+from admi import alerts, auth, charts, i18n, kpis, license as lic, report, update
 from admi.config import (DEPARTEMENTS, DOW, MOIS, STATUTS_MACHINE, THEME,
                          TYPES_ARRET, TYPES_INTERV, TYPES_PLAN, dep)
-from admi.data import (DATA_FILE, delete_record, load_db, save_db,
-                       save_settings, uid, upsert_record)
+from admi.data import (DATA_FILE, delete_record, get_alert_config, load_db,
+                       save_alert_config, save_db, save_settings, uid,
+                       upsert_record)
 
 
 def _machine_opts(db):
@@ -124,6 +125,16 @@ def can_edit():
 
 def is_admin():
     return _role() == "admin"
+
+
+def _maybe_alert(subject, message):
+    """Envoie une alerte (email/SMS) si les alertes auto sont activées. Best-effort."""
+    try:
+        cfg = get_alert_config()
+        if cfg.get("enabled"):
+            alerts.notify(cfg, subject, message)
+    except Exception:
+        pass
 
 
 def fmt_num(n, dec=0):
@@ -285,9 +296,9 @@ def view_machines(db):
     plot(charts.bar_puissance_by_dept(db))
 
     section_title("Parc machines")
-    rows = [{"Machine": m["nom"], "Département": dep(m["departementId"])["court"],
-             "Puissance (kW)": m.get("puissanceKW", 0), "Mise en service": m.get("dateMES", ""),
-             "Statut": m.get("statut", "")} for m in db.machines]
+    rows = [{T("Machine"): m["nom"], T("Dépt."): dep(m["departementId"])["court"],
+             T("Puissance (kW)"): m.get("puissanceKW", 0), T("Mise en service"): m.get("dateMES", ""),
+             T("Statut"): TT(m.get("statut", ""))} for m in db.machines]
     st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
     if st.session_state.get("mach_target"):
@@ -313,11 +324,11 @@ def view_arrets(db):
         plot(charts.bar_arrets_by_type(arrets, height=200))
 
     section_title("Journal des arrêts")
-    rows = [{"Machine": db.machine_name(a["machineId"]), "Dépt.": dep(a["departementId"])["court"],
-             "Type": a["type"], "Début": a["dateDebut"].replace("T", " "),
-             "Fin": a["dateFin"].replace("T", " "),
-             "Durée (h)": round(kpis.hours_between(a["dateDebut"], a["dateFin"]), 1),
-             "Cause": a.get("cause", "")} for a in arrets]
+    rows = [{T("Machine"): db.machine_name(a["machineId"]), T("Dépt."): dep(a["departementId"])["court"],
+             T("Type"): TT(a["type"]), T("Début"): a["dateDebut"].replace("T", " "),
+             T("Fin"): a["dateFin"].replace("T", " "),
+             T("Durée (h)"): round(kpis.hours_between(a["dateDebut"], a["dateFin"]), 1),
+             T("Cause"): a.get("cause", "")} for a in arrets]
     st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
     if st.session_state.get("arret_target"):
@@ -350,11 +361,11 @@ def view_interventions(db):
     rows = []
     for i in intervs:
         n_pieces = len(i.get("pieces", []))
-        rows.append({"Date": i["date"], "Machine": db.machine_name(i["machineId"]),
-                     "Dépt.": dep(i["departementId"])["court"], "Type": i["type"],
-                     "Technicien": i.get("technicien", ""),
-                     "Durée (h)": i.get("duree", 0), "Pièces": n_pieces,
-                     "Coût total (FCFA)": round(kpis.intervention_cost(i))})
+        rows.append({T("Date"): i["date"], T("Machine"): db.machine_name(i["machineId"]),
+                     T("Dépt."): dep(i["departementId"])["court"], T("Type"): TT(i["type"]),
+                     T("Technicien"): i.get("technicien", ""),
+                     T("Durée (h)"): i.get("duree", 0), T("Pièces"): n_pieces,
+                     T("Coût total (FCFA)"): round(kpis.intervention_cost(i))})
     st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
     # Rapport d'intervention (fiche PDF par intervention)
@@ -367,7 +378,7 @@ def view_interventions(db):
         chosen = intervs[opts.index(sel)]
         with g2:
             st.write("")
-            st.download_button("⬇ Rapport d'intervention (PDF)",
+            st.download_button(T("⬇ Rapport d'intervention (PDF)"),
                                report.build_intervention_report(db, chosen),
                                file_name=f"ADMI_intervention_{chosen['date']}.pdf",
                                mime="application/pdf", width="stretch")
@@ -406,8 +417,8 @@ def view_energie(db):
         plot(charts.pie_energie_repartition(agg))
 
     section_title("Relevés détaillés")
-    rows = [{"Mois": MOIS[e["mois"]], "Département / Service": dep(e["departementId"])["nom"],
-             "Consommation (kWh)": e["kwh"], "Montant (FCFA)": e["montant"]}
+    rows = [{T("Mois"): i18n.month(e["mois"]), T("Département / Service"): TD(e["departementId"], dep(e["departementId"])["nom"]),
+             T("Consommation (kWh)"): e["kwh"], T("Montant (FCFA)"): e["montant"]}
             for e in sorted(liste, key=lambda e: (e["mois"], dep(e["departementId"])["nom"]))]
     st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
@@ -422,12 +433,12 @@ def view_import(db):
     exp, tpl = st.columns(2)
     with exp:
         section_title("Exporter les données actuelles")
-        st.download_button("⬇ Exporter en Excel", export_bytes(db),
+        st.download_button(T("⬇ Exporter en Excel"), export_bytes(db),
                            file_name="ADMI_export.xlsx",
                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     with tpl:
         section_title("Modèle d'import")
-        st.download_button("⬇ Télécharger le modèle Excel", template_bytes(),
+        st.download_button(T("⬇ Télécharger le modèle Excel"), template_bytes(),
                            file_name="ADMI_modele_import.xlsx",
                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
@@ -720,6 +731,56 @@ def view_users(db):
 
 
 # ---------------------------------------------------------------------------
+# SECTION : Alertes (admin uniquement)
+# ---------------------------------------------------------------------------
+def view_alerts(db):
+    cfg = get_alert_config()
+    st.markdown(f'<div style="color:{THEME["muted2"]}; font-size:12.5px; margin-bottom:8px">'
+                + T("Recevez une alerte (e-mail / SMS) en cas de nouvelle panne. "
+                    "Configurez le serveur d'envoi ci-dessous.") + "</div>", unsafe_allow_html=True)
+    with st.form("alert_form"):
+        enabled = st.toggle(T("Alertes automatiques (nouvelle panne / machine en panne)"),
+                            value=cfg.get("enabled", False))
+        section_title("Notifications par e-mail")
+        emails = st.text_input(T("Destinataires e-mail (séparés par des virgules)"),
+                               value=", ".join(cfg.get("emails", [])))
+        smtp = cfg.get("smtp", {})
+        c1, c2, c3 = st.columns([2, 1, 1])
+        host = c1.text_input("SMTP", value=smtp.get("host", ""), placeholder="smtp.gmail.com")
+        port = c2.number_input("Port", 1, 65535, int(smtp.get("port", 587)))
+        tls = c3.checkbox("TLS", value=smtp.get("tls", True))
+        c4, c5, c6 = st.columns(3)
+        user = c4.text_input(T("Utilisateur"), value=smtp.get("user", ""))
+        pwd = c5.text_input(T("Mot de passe"), value=smtp.get("password", ""), type="password")
+        frm = c6.text_input("From", value=smtp.get("from", ""))
+        section_title("SMS (Twilio)")
+        tw = cfg.get("twilio", {})
+        d1, d2, d3 = st.columns(3)
+        sid = d1.text_input("Twilio SID", value=tw.get("sid", ""))
+        token = d2.text_input("Twilio Token", value=tw.get("token", ""), type="password")
+        tfrom = d3.text_input(T("Numéro Twilio (From)"), value=tw.get("from", ""))
+        numbers = st.text_input(T("Numéros SMS (séparés par des virgules)"),
+                                value=", ".join(cfg.get("sms_numbers", [])))
+        saved = st.form_submit_button(T("Enregistrer la configuration"), type="primary")
+    if saved:
+        newcfg = {"enabled": enabled,
+                  "emails": [x.strip() for x in emails.split(",") if x.strip()],
+                  "smtp": {"host": host, "port": int(port), "user": user,
+                           "password": pwd, "from": frm, "tls": tls},
+                  "sms_numbers": [x.strip() for x in numbers.split(",") if x.strip()],
+                  "twilio": {"sid": sid, "token": token, "from": tfrom}}
+        save_alert_config(newcfg)
+        st.success(T("Configuration enregistrée."))
+        st.rerun()
+    if st.button(T("Envoyer une alerte de test")):
+        res = alerts.notify(get_alert_config(), "ADMI — Test", T("Ceci est un test d'alerte ADMI."))
+        if not res:
+            st.warning(T("Aucun canal configuré (e-mail ou SMS)."))
+        for chan, (ok, msg) in res.items():
+            (st.success if ok else st.error)(f"{chan} : {msg}")
+
+
+# ---------------------------------------------------------------------------
 # Navigation
 # ---------------------------------------------------------------------------
 def _nav():
@@ -736,6 +797,7 @@ def _nav():
         "Paramètres": view_settings,
     }
     if is_admin():
+        sections["Alertes"] = view_alerts
         sections["Utilisateurs"] = view_users
     subtitles = {
         "Tableau de bord": "Vue d'ensemble des indicateurs de maintenance",
@@ -747,6 +809,7 @@ def _nav():
         "Rapports": "Générer un rapport complet (HTML / PDF)",
         "Import / Export": "Alimenter ADMI avec vos données, ou exporter une sauvegarde",
         "Paramètres": "Heures de travail de l'usine par département",
+        "Alertes": "Alertes e-mail / SMS en cas de panne",
         "Utilisateurs": "Gestion des comptes et des rôles",
     }
     return sections, subtitles
@@ -758,9 +821,9 @@ def _nav():
 def view_report(db):
     st.markdown(
         f'<div style="color:{THEME["muted2"]}; font-size:12.5px; margin-bottom:10px">'
-        "Générez un rapport complet (indicateurs, graphiques, synthèse par département) au format "
-        "<b>HTML autonome</b> (interactif, imprimable en PDF depuis le navigateur) ou <b>PDF</b>.</div>",
-        unsafe_allow_html=True)
+        + T("Générez un rapport complet (indicateurs, graphiques, synthèse par département) au format")
+        + f" <b>{T('HTML autonome')}</b> ({T('interactif, imprimable en PDF depuis le navigateur')}) "
+        + "/ <b>PDF</b>.</div>", unsafe_allow_html=True)
 
     c1, c2, c3, c4 = st.columns([1, 1, 1, 1.4])
     with c1:
@@ -776,8 +839,8 @@ def view_report(db):
         dept = dept_selectbox("Département", "rep_dept")
 
     label = (f"{MOIS[mois]}_{annee}" if periode == "mois" else str(annee))
-    if st.button("⚙ Générer le rapport", type="primary"):
-        with st.spinner("Génération du rapport en cours…"):
+    if st.button(T("⚙ Générer le rapport"), type="primary"):
+        with st.spinner(T("Génération du rapport en cours…")):
             st.session_state.rep_html = report.build_html_report(db, periode, annee, mois, dept)
             try:
                 st.session_state.rep_pdf = report.build_pdf_report(db, periode, annee, mois, dept)
@@ -790,15 +853,15 @@ def view_report(db):
         lab = st.session_state.get("rep_label", "rapport")
         d1, d2 = st.columns(2)
         with d1:
-            st.download_button("⬇ Télécharger le rapport HTML", st.session_state.rep_html,
+            st.download_button(T("⬇ Télécharger le rapport HTML"), st.session_state.rep_html,
                                file_name=f"ADMI_rapport_{lab}.html", mime="text/html", width="stretch")
         with d2:
             if st.session_state.get("rep_pdf"):
-                st.download_button("⬇ Télécharger le rapport PDF", st.session_state.rep_pdf,
+                st.download_button(T("⬇ Télécharger le rapport PDF"), st.session_state.rep_pdf,
                                    file_name=f"ADMI_rapport_{lab}.pdf", mime="application/pdf",
                                    width="stretch")
             else:
-                st.button("PDF indisponible", disabled=True, width="stretch")
+                st.button(T("PDF indisponible"), disabled=True, width="stretch")
                 if st.session_state.get("rep_pdf_err"):
                     st.caption(f"PDF : {st.session_state.rep_pdf_err}")
         section_title("Aperçu")
@@ -867,30 +930,33 @@ def _dialog_buttons(has_edit):
 def machine_dialog(db, target):
     mode, val = target
     m = next((x for x in db.machines if x["id"] == val), None) if mode == "edit" else None
-    nom = st.text_input("Nom de la machine", value=(m["nom"] if m else ""),
+    nom = st.text_input(T("Nom de la machine"), value=(m["nom"] if m else ""),
                         placeholder="Ex : Presse à injection AM-3")
     c1, c2 = st.columns(2)
     with c1:
         deptid = _dept_picker("Département", (m["departementId"] if m else "am"), key="mach_dlg_dept")
     with c2:
-        kw = st.number_input("Puissance (kW)", 0.0, 100000.0,
+        kw = st.number_input(T("Puissance (kW)"), 0.0, 100000.0,
                              float(m["puissanceKW"]) if m else 0.0, 0.5)
     c3, c4 = st.columns(2)
     with c3:
-        mes = st.date_input("Mise en service", format="DD/MM/YYYY",
+        mes = st.date_input(T("Mise en service"), format="DD/MM/YYYY",
                             value=date.fromisoformat(m["dateMES"]) if (m and m.get("dateMES")) else date.today())
     with c4:
-        statut = st.selectbox("Statut", STATUTS_MACHINE,
+        statut = st.selectbox(T("Statut"), STATUTS_MACHINE, format_func=TT,
                               index=STATUTS_MACHINE.index(m["statut"]) if (m and m["statut"] in STATUTS_MACHINE) else 0)
     save, delete, cancel = _dialog_buttons(m is not None)
     if save:
         if not nom.strip():
-            st.warning("Le nom de la machine est requis.")
+            st.warning(T("Le nom de la machine est requis."))
         else:
             data = {"nom": nom.strip(), "departementId": deptid, "puissanceKW": kw,
                     "dateMES": mes.isoformat(), "statut": statut}
             rec = {**m, **data} if m else {"id": uid(), **data}
             upsert_record(db, "machines", rec)
+            if statut == "En panne" and (m is None or m.get("statut") != "En panne"):
+                _maybe_alert(f"ADMI — {i18n.type_label('En panne')} : {nom.strip()}",
+                             f"{nom.strip()} · {i18n.dept_label(deptid, dep(deptid)['nom'])}")
             _close_dialog("mach"); st.rerun()
     if delete and m:
         delete_record(db, "machines", m["id"])
@@ -905,36 +971,40 @@ def arret_dialog(db, target):
     a = next((x for x in db.arrets if x["id"] == val), None) if mode == "edit" else None
     names, ids = _machine_opts(db)
     if not names:
-        st.warning("Ajoutez d'abord au moins une machine (onglet Machines).")
-        if st.button("Fermer"):
+        st.warning(T("Ajoutez d'abord au moins une machine (onglet Machines)."))
+        if st.button(T("Fermer")):
             _close_dialog("arret"); st.rerun()
         return
     midx = ids.index(a["machineId"]) if (a and a["machineId"] in ids) else 0
-    machine_id = ids[names.index(st.selectbox("Machine", names, index=midx))]
-    typ = st.selectbox("Type d'arrêt", TYPES_ARRET,
+    machine_id = ids[names.index(st.selectbox(T("Machine"), names, index=midx))]
+    typ = st.selectbox(T("Type d'arrêt"), TYPES_ARRET, format_func=TT,
                        index=TYPES_ARRET.index(a["type"]) if (a and a["type"] in TYPES_ARRET) else 0)
-    cause = st.text_input("Cause", value=(a.get("cause", "") if a else ""), placeholder="Ex : Rupture courroie")
+    cause = st.text_input(T("Cause"), value=(a.get("cause", "") if a else ""), placeholder="Ex : Rupture courroie")
     dd0 = datetime.fromisoformat(a["dateDebut"]) if a else datetime.now().replace(second=0, microsecond=0)
     df0 = datetime.fromisoformat(a["dateFin"]) if a else dd0
     c1, c2 = st.columns(2)
-    d_deb = c1.date_input("Date de début", value=dd0.date(), format="DD/MM/YYYY")
-    t_deb = c2.time_input("Heure de début", value=dd0.time())
+    d_deb = c1.date_input(T("Date de début"), value=dd0.date(), format="DD/MM/YYYY")
+    t_deb = c2.time_input(T("Heure de début"), value=dd0.time())
     c3, c4 = st.columns(2)
-    d_fin = c3.date_input("Date de fin", value=df0.date(), format="DD/MM/YYYY")
-    t_fin = c4.time_input("Heure de fin", value=df0.time())
-    desc = st.text_area("Description", value=(a.get("description", "") if a else ""))
+    d_fin = c3.date_input(T("Date de fin"), value=df0.date(), format="DD/MM/YYYY")
+    t_fin = c4.time_input(T("Heure de fin"), value=df0.time())
+    desc = st.text_area(T("Description"), value=(a.get("description", "") if a else ""))
     save, delete, cancel = _dialog_buttons(a is not None)
     if save:
         debut = datetime.combine(d_deb, t_deb)
         fin = datetime.combine(d_fin, t_fin)
         if fin < debut:
-            st.warning("La date de fin doit être après le début.")
+            st.warning(T("La date de fin doit être après le début."))
         else:
             data = {"machineId": machine_id, "departementId": db.machine_dept(machine_id), "type": typ,
                     "cause": cause.strip(), "dateDebut": debut.strftime("%Y-%m-%dT%H:%M"),
                     "dateFin": fin.strftime("%Y-%m-%dT%H:%M"), "description": desc.strip()}
             rec = {**a, **data} if a else {"id": uid(), **data}
             upsert_record(db, "arrets", rec)
+            if a is None and typ == "Panne":
+                mn = db.machine_name(machine_id)
+                _maybe_alert(f"ADMI — {i18n.t('Panne')} : {mn}",
+                             f"{mn} · {cause.strip() or '—'} · {debut.strftime('%d/%m/%Y %H:%M')}")
             _close_dialog("arret"); st.rerun()
     if delete and a:
         delete_record(db, "arrets", a["id"])
@@ -949,23 +1019,23 @@ def interv_dialog(db, target):
     it = next((x for x in db.interventions if x["id"] == val), None) if mode == "edit" else None
     names, ids = _machine_opts(db)
     if not names:
-        st.warning("Ajoutez d'abord au moins une machine (onglet Machines).")
-        if st.button("Fermer"):
+        st.warning(T("Ajoutez d'abord au moins une machine (onglet Machines)."))
+        if st.button(T("Fermer")):
             _close_dialog("interv"); st.rerun()
         return
     c1, c2 = st.columns(2)
-    idate = c1.date_input("Date", format="DD/MM/YYYY",
+    idate = c1.date_input(T("Date"), format="DD/MM/YYYY",
                           value=date.fromisoformat(it["date"]) if it else date.today())
     midx = ids.index(it["machineId"]) if (it and it["machineId"] in ids) else 0
-    machine_id = ids[names.index(c2.selectbox("Machine", names, index=midx))]
+    machine_id = ids[names.index(c2.selectbox(T("Machine"), names, index=midx))]
     c3, c4 = st.columns(2)
-    typ = c3.selectbox("Type d'intervention", TYPES_INTERV,
+    typ = c3.selectbox(T("Type d'intervention"), TYPES_INTERV, format_func=TT,
                        index=TYPES_INTERV.index(it["type"]) if (it and it["type"] in TYPES_INTERV) else 0)
-    tech = c4.text_input("Technicien(s)", value=(it.get("technicien", "") if it else ""))
+    tech = c4.text_input(T("Technicien(s)"), value=(it.get("technicien", "") if it else ""))
     c5, c6 = st.columns(2)
-    duree = c5.number_input("Durée (h)", 0.0, 1000.0, float(it["duree"]) if it else 0.0, 0.5)
-    cout_mo = c6.number_input("Coût main d'œuvre (FCFA)", 0.0, 1e9, float(it["coutMainOeuvre"]) if it else 0.0, 1000.0)
-    desc = st.text_area("Description des travaux", value=(it.get("description", "") if it else ""))
+    duree = c5.number_input(T("Durée (h)"), 0.0, 1000.0, float(it["duree"]) if it else 0.0, 0.5)
+    cout_mo = c6.number_input(T("Coût main d'œuvre (FCFA)"), 0.0, 1e9, float(it["coutMainOeuvre"]) if it else 0.0, 1000.0)
+    desc = st.text_area(T("Description des travaux"), value=(it.get("description", "") if it else ""))
 
     # --- Pièces changées / réparées : lignes avec boutons + / − ---
     rid = val or "new"
@@ -991,7 +1061,7 @@ def interv_dialog(db, target):
         if c[3].button("−", key=f"prm_{row['_k']}", help="Supprimer cette pièce"):
             st.session_state["interv_rows"] = [r for r in rows if r["_k"] != row["_k"]]
             st.rerun()
-    if st.button("＋ Ajouter une pièce", key="interv_addpiece"):
+    if st.button(T("＋ Ajouter une pièce"), key="interv_addpiece"):
         rows.append({"designation": "", "qte": 1, "cout": 0, "_k": uid()})
         st.rerun()
 
@@ -1154,6 +1224,7 @@ def render_login_screen():
 
 
 def main():
+    i18n.set_lang(st.session_state.get("lang", "fr"))  # langue courante pour charts/rapports
     # 1) licence  2) connexion  3) démarrage animé  4) application
     if not lic.is_activated():
         render_license_screen()

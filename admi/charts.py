@@ -1,15 +1,18 @@
-"""Constructeurs de graphiques Plotly (thème sombre ADMI)."""
+"""Constructeurs de graphiques Plotly (thème sombre ADMI, bilingues FR/EN)."""
 from __future__ import annotations
 
 import plotly.graph_objects as go
 
-from .config import DEPARTEMENTS, MOIS_COURT, THEME, dep
+from . import i18n
+from .config import DEPARTEMENTS, THEME, dep
 from .theme import style_fig
+
+_t = i18n.t
 
 
 def _empty(msg: str, height: int = 260):
     fig = go.Figure()
-    fig.add_annotation(text=f"<b>Aucune donnée</b><br>{msg}", showarrow=False,
+    fig.add_annotation(text=f"<b>{_t('Aucune donnée')}</b><br>{_t(msg)}", showarrow=False,
                        font=dict(color=THEME["muted2"], size=13), xref="paper", yref="paper",
                        x=0.5, y=0.5)
     fig.update_xaxes(visible=False)
@@ -21,7 +24,7 @@ def gauge_disponibilite(dispo: float, height: int = 240):
     reste = round(100 - dispo, 1)
     fig = go.Figure(go.Pie(
         values=[round(dispo, 1), reste],
-        labels=["Disponible", "Temps d'arrêt"],
+        labels=[_t("Disponible"), _t("Temps d'arrêt")],
         marker=dict(colors=[THEME["success"], THEME["danger"]],
                     line=dict(color=THEME["panel"], width=3)),
         hole=0.78, sort=False, direction="clockwise", rotation=0,
@@ -31,20 +34,21 @@ def gauge_disponibilite(dispo: float, height: int = 240):
     fig.add_annotation(text=f"<b>{dispo:.1f}%</b>", showarrow=False,
                        font=dict(family="Oswald", size=34, color=THEME["success"]),
                        x=0.5, y=0.54, xref="paper", yref="paper")
-    fig.add_annotation(text="DISPONIBLE", showarrow=False,
+    fig.add_annotation(text=_t("Disponible").upper(), showarrow=False,
                        font=dict(size=10, color=THEME["muted"]),
                        x=0.5, y=0.40, xref="paper", yref="paper")
     return style_fig(fig, height=height, showlegend=False, margin=dict(l=0, r=0, t=10, b=0))
 
 
 def _dept_series(agg: dict, only_positive: bool = True):
-    """Retourne (courts, noms, valeurs, couleurs) ordonnés selon DEPARTEMENTS."""
+    """Retourne (courts, noms, valeurs, couleurs) ordonnés selon DEPARTEMENTS.
+    Les codes courts (AM, OND…) sont neutres ; les noms complets sont traduits."""
     courts, noms, vals, cols = [], [], [], []
     for d in DEPARTEMENTS:
         v = agg.get(d["id"], 0)
         if only_positive and not v:
             continue
-        courts.append(d["court"]); noms.append(d["nom"])
+        courts.append(d["court"]); noms.append(i18n.dept_label(d["id"], d["nom"]))
         vals.append(round(v, 2)); cols.append(d["couleur"])
     return courts, noms, vals, cols
 
@@ -56,7 +60,7 @@ def bar_arrets_by_dept(agg: dict, height: int = 260):
         customdata=noms, hovertemplate="%{customdata}<br>%{y} h<extra></extra>",
     ))
     fig.update_traces(marker=dict(cornerradius=5))
-    return style_fig(fig, height=height, yaxis_title="heures")
+    return style_fig(fig, height=height, yaxis_title=_t("heures"))
 
 
 def donut_cout_by_dept(agg: dict, height: int = 260):
@@ -101,6 +105,7 @@ def stacked_energie_mensuelle(energie_annee: list, dept: str, height: int = 320)
     """Barres empilées : consommation mensuelle par département sur l'année."""
     if not energie_annee:
         return _empty("Aucun relevé énergétique pour cette année.", height)
+    months = [i18n.month(i)[:3] for i in range(12)]
     depts = DEPARTEMENTS if dept == "all" else [dep(dept)]
     fig = go.Figure()
     for d in depts:
@@ -110,7 +115,7 @@ def stacked_energie_mensuelle(energie_annee: list, dept: str, height: int = 320)
                 monthly[e["mois"]] += float(e.get("kwh") or 0)
         if sum(monthly) == 0:
             continue
-        fig.add_bar(x=MOIS_COURT, y=monthly, name=d["court"], marker_color=d["couleur"])
+        fig.add_bar(x=months, y=monthly, name=d["court"], marker_color=d["couleur"])
     fig.update_layout(barmode="stack", hovermode="x unified")
     return style_fig(fig, height=height, yaxis_title="kWh",
                      legend=dict(orientation="h", y=-0.12, x=0.5, xanchor="center", font=dict(size=10)))
@@ -127,8 +132,8 @@ def grouped_interv_prevcorr(agg: dict, height: int = 320):
     if not courts:
         return _empty("Ajoutez des rapports d'intervention pour cette période.", height)
     fig = go.Figure()
-    fig.add_bar(x=courts, y=prev, name="Préventif", marker_color=THEME["success"])
-    fig.add_bar(x=courts, y=corr, name="Correctif / autre", marker_color=THEME["danger"])
+    fig.add_bar(x=courts, y=prev, name=i18n.type_label("Préventif"), marker_color=THEME["success"])
+    fig.add_bar(x=courts, y=corr, name=_t("Correctif / autre"), marker_color=THEME["danger"])
     fig.update_layout(barmode="group")
     return style_fig(fig, height=height,
                      legend=dict(orientation="h", y=-0.12, x=0.5, xanchor="center", font=dict(size=10)))
@@ -150,7 +155,7 @@ def line_trend(trend: list, metric: str, height: int = 320):
         line=dict(color=THEME["accent"], width=3, shape="spline"),
         marker=dict(color=THEME["accent"], size=8),
         fillcolor="rgba(242,169,59,0.15)",
-        name=_TREND_LABELS.get(metric, metric),
+        name=_t(_TREND_LABELS.get(metric, metric)),
         hovertemplate="%{x}<br>%{y:,.2f}<extra></extra>",
     ))
     fig.update_layout(showlegend=False, hovermode="x unified")
@@ -182,7 +187,7 @@ def bar_arrets_by_type(arrets: list, height: int = 260):
     vals = [round(agg[t], 1) for t in types]
     if not types:
         return _empty("Aucun arrêt sur ce filtre.", height)
-    fig = go.Figure(go.Bar(x=types, y=vals, marker_color=THEME["accent"],
+    fig = go.Figure(go.Bar(x=[i18n.type_label(t) for t in types], y=vals, marker_color=THEME["accent"],
                            hovertemplate="%{x}<br>%{y} h<extra></extra>"))
     fig.update_traces(marker=dict(cornerradius=5))
-    return style_fig(fig, height=height, yaxis_title="heures")
+    return style_fig(fig, height=height, yaxis_title=_t("heures"))

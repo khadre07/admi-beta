@@ -9,8 +9,10 @@ from __future__ import annotations
 import io
 from datetime import date
 
-from . import charts, kpis
+from . import charts, i18n, kpis
 from .config import DEPARTEMENTS, THEME, dep
+
+_t = i18n.t
 
 
 def _fmt(n, dec=0):
@@ -23,8 +25,9 @@ def _money(n):
 
 
 def _period_label(periode, annee, mois):
-    from .config import MOIS
-    return f"{MOIS[mois]} {annee}" if periode == "mois" else f"Année {annee}"
+    if periode == "mois":
+        return f"{i18n.month(mois)} {annee}"
+    return (f"Year {annee}" if i18n.get_lang() == "en" else f"Année {annee}")
 
 
 def _gather(db, periode, annee, mois, dept):
@@ -74,20 +77,20 @@ def build_html_report(db, periode, annee, mois, dept) -> bytes:
     for i, (t, fig) in enumerate(figs):
         div = fig.to_html(include_plotlyjs=("inline" if i == 0 else False), full_html=False,
                           config={"displayModeBar": False})
-        chart_html.append(f'<div class="card"><div class="ct">{t}</div>{div}</div>')
+        chart_html.append(f'<div class="card"><div class="ct">{_t(t)}</div>{div}</div>')
 
-    dept_name = "Tous les départements" if dept == "all" else dep(dept)["nom"]
-    kpi_html = "".join(f'<div class="kpi"><div class="lab">{lab}</div><div class="val">{val}</div></div>'
+    dept_name = _t("Tous les départements") if dept == "all" else i18n.dept_label(dept, dep(dept)["nom"])
+    kpi_html = "".join(f'<div class="kpi"><div class="lab">{_t(lab)}</div><div class="val">{val}</div></div>'
                        for lab, val in _kpi_pairs(k))
     rows = "".join(
-        f"<tr><td><b style='color:{d['couleur']}'>{d['nom']}</b></td>"
+        f"<tr><td><b style='color:{d['couleur']}'>{i18n.dept_label(d['id'], d['nom'])}</b></td>"
         f"<td>{_fmt(a,1)}</td><td>{_money(c)}</td><td>{_fmt(e)}</td></tr>"
         for d, a, c, e in _dept_rows(arrets, intervs, energie))
-    table_html = ("<table><thead><tr><th>Département</th><th>Arrêt (h)</th>"
-                  "<th>Coût maintenance</th><th>Énergie (kWh)</th></tr></thead>"
+    table_html = (f"<table><thead><tr><th>{_t('Département')}</th><th>{_t('Arrêt (h)')}</th>"
+                  f"<th>{_t('Coût maintenance')}</th><th>{_t('Énergie (kWh)')}</th></tr></thead>"
                   f"<tbody>{rows}</tbody></table>")
 
-    html = f"""<!doctype html><html lang="fr"><head><meta charset="utf-8">
+    html = f"""<!doctype html><html lang="{i18n.get_lang()}"><head><meta charset="utf-8">
 <title>Rapport ADMI — {_period_label(periode, annee, mois)}</title>
 <style>
   body{{margin:0;background:{THEME['bg']};color:{THEME['text']};font-family:'Segoe UI',Arial,sans-serif;padding:32px;}}
@@ -109,15 +112,15 @@ def build_html_report(db, periode, annee, mois, dept) -> bytes:
 </style></head><body>
   <div class="head">
     <div><div class="brand"><span class="d">●</span> ADMI</div>
-      <div style="color:{THEME['muted']};font-size:13px">Rapport de maintenance industrielle</div></div>
-    <div class="meta"><b>Période :</b> {_period_label(periode, annee, mois)}<br>
-      <b>Périmètre :</b> {dept_name}<br><b>Généré le :</b> {date.today().strftime('%d/%m/%Y')}</div>
+      <div style="color:{THEME['muted']};font-size:13px">{_t('Rapport de maintenance industrielle')}</div></div>
+    <div class="meta"><b>{_t('Période :')}</b> {_period_label(periode, annee, mois)}<br>
+      <b>{_t('Périmètre :')}</b> {dept_name}<br><b>{_t('Généré le :')}</b> {date.today().strftime('%d/%m/%Y')}</div>
   </div>
   <div class="kpis">{kpi_html}</div>
-  <div class="card"><div class="ct">Synthèse par département</div>{table_html}</div>
+  <div class="card"><div class="ct">{_t('Synthèse par département')}</div>{table_html}</div>
   <div class="grid2">{''.join(chart_html[:4])}</div>
   <div class="grid2">{''.join(chart_html[4:])}</div>
-  <div class="foot">ADMI — Analyse des Données de Maintenance Industrielle · rapport généré automatiquement</div>
+  <div class="foot">ADMI — {_t('Analyse des Données de Maintenance Industrielle')} · {_t('Rapport de maintenance industrielle · rapport généré automatiquement')}</div>
 </body></html>"""
     return html.encode("utf-8")
 
@@ -247,17 +250,18 @@ def build_intervention_report(db, interv) -> bytes:
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=18 * mm, bottomMargin=16 * mm,
-                            leftMargin=18 * mm, rightMargin=18 * mm, title="Rapport d'intervention")
+                            leftMargin=18 * mm, rightMargin=18 * mm, title=_t("Rapport d'intervention"))
     story = [
-        Paragraph("ADMI — Rapport d'intervention", h1),
-        Paragraph(f"Généré le {date.today().strftime('%d/%m/%Y')}", small),
+        Paragraph(_t("ADMI — Rapport d'intervention"), h1),
+        Paragraph(f"{_t('Généré le')} {date.today().strftime('%d/%m/%Y')}", small),
         Spacer(1, 8 * mm),
     ]
 
     info = [
-        ["Date", interv.get("date", "—"), "Type", interv.get("type", "—")],
-        ["Machine", db.machine_name(interv["machineId"]), "Département", d["nom"]],
-        ["Technicien(s)", interv.get("technicien", "—") or "—", "Durée",
+        [_t("Date"), interv.get("date", "—"), _t("Type"), i18n.type_label(interv.get("type", "—"))],
+        [_t("Machine"), db.machine_name(interv["machineId"]), _t("Département"),
+         i18n.dept_label(d["id"], d["nom"])],
+        [_t("Technicien(s)"), interv.get("technicien", "—") or "—", _t("Durée"),
          f'{_fmt(interv.get("duree", 0),1)} h'],
     ]
     it = Table(info, colWidths=[30 * mm, 62 * mm, 30 * mm, 52 * mm])
@@ -269,18 +273,18 @@ def build_intervention_report(db, interv) -> bytes:
         ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
     story += [it, Spacer(1, 6 * mm)]
 
-    story.append(Paragraph("Travaux réalisés", h2))
+    story.append(Paragraph(_t("Travaux réalisés"), h2))
     story.append(Paragraph((interv.get("description") or "—").replace("\n", "<br/>"), body))
     story.append(Spacer(1, 6 * mm))
 
-    story.append(Paragraph("Pièces changées / réparées", h2))
-    prows = [["Désignation", "Qté", "Coût unit.", "Total"]]
+    story.append(Paragraph(_t("Pièces changées / réparées"), h2))
+    prows = [[_t("Désignation"), _t("Qté"), _t("Coût unit."), _t("Total")]]
     for p in pieces:
         q = float(p.get("qte") or 1)
         cu = float(p.get("cout") or 0)
         prows.append([p.get("designation", "—"), _fmt(q), _money(cu), _money(cu * q)])
     if not pieces:
-        prows.append(["Aucune pièce", "", "", ""])
+        prows.append([_t("Aucune pièce"), "", "", ""])
     pt = Table(prows, colWidths=[86 * mm, 20 * mm, 34 * mm, 34 * mm])
     pt.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), dark), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -290,9 +294,9 @@ def build_intervention_report(db, interv) -> bytes:
         ("ALIGN", (1, 1), (-1, -1), "RIGHT")]))
     story += [pt, Spacer(1, 6 * mm)]
 
-    totals = [["Coût pièces", _money(cout_pieces)],
-              ["Coût main d'œuvre", _money(cout_mo)],
-              ["COÛT TOTAL", _money(total)]]
+    totals = [[_t("Coût pièces"), _money(cout_pieces)],
+              [_t("Coût main d'œuvre"), _money(cout_mo)],
+              [_t("COÛT TOTAL"), _money(total)]]
     tt = Table(totals, colWidths=[120 * mm, 54 * mm])
     tt.setStyle(TableStyle([
         ("FONTSIZE", (0, 0), (-1, -1), 10), ("ALIGN", (1, 0), (1, -1), "RIGHT"),
@@ -325,17 +329,17 @@ def build_pdf_report(db, periode, annee, mois, dept) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=16 * mm, bottomMargin=14 * mm,
                             leftMargin=16 * mm, rightMargin=16 * mm, title="Rapport ADMI")
-    dept_name = "Tous les départements" if dept == "all" else dep(dept)["nom"]
+    dept_name = _t("Tous les départements") if dept == "all" else i18n.dept_label(dept, dep(dept)["nom"])
     story = [
-        Paragraph("ADMI — Rapport de maintenance industrielle", h1),
-        Paragraph(f"Période : <b>{_period_label(periode, annee, mois)}</b> &nbsp;·&nbsp; "
-                  f"Périmètre : <b>{dept_name}</b> &nbsp;·&nbsp; "
-                  f"Généré le {date.today().strftime('%d/%m/%Y')}", small),
+        Paragraph(_t("ADMI — Rapport de maintenance industrielle"), h1),
+        Paragraph(f"{_t('Période :')} <b>{_period_label(periode, annee, mois)}</b> &nbsp;·&nbsp; "
+                  f"{_t('Périmètre :')} <b>{dept_name}</b> &nbsp;·&nbsp; "
+                  f"{_t('Généré le')} {date.today().strftime('%d/%m/%Y')}", small),
         Spacer(1, 8 * mm),
     ]
 
-    # KPI (mêmes 8 que le HTML)
-    pairs = _kpi_pairs(k)
+    # KPI (mêmes 8 que le HTML) — libellés traduits
+    pairs = [(_t(lab), val) for lab, val in _kpi_pairs(k)]
     kpi_data = [[pairs[0][0], pairs[0][1], pairs[1][0], pairs[1][1]],
                 [pairs[2][0], pairs[2][1], pairs[3][0], pairs[3][1]],
                 [pairs[4][0], pairs[4][1], pairs[5][0], pairs[5][1]],
@@ -349,13 +353,13 @@ def build_pdf_report(db, periode, annee, mois, dept) -> bytes:
         ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#DDDDDD")),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7)]))
-    story += [Paragraph("Indicateurs clés", h2), Spacer(1, 2 * mm), kt, Spacer(1, 6 * mm)]
+    story += [Paragraph(_t("Indicateurs clés"), h2), Spacer(1, 2 * mm), kt, Spacer(1, 6 * mm)]
 
     # Synthèse par département
     drows = _dept_rows(arrets, intervs, energie)
-    trows = [["Département", "Arrêt (h)", "Coût maintenance", "Énergie (kWh)"]]
+    trows = [[_t("Département"), _t("Arrêt (h)"), _t("Coût maintenance"), _t("Énergie (kWh)")]]
     for d, a, c, e in drows:
-        trows.append([d["nom"], _fmt(a, 1), _money(c), _fmt(e)])
+        trows.append([i18n.dept_label(d["id"], d["nom"]), _fmt(a, 1), _money(c), _fmt(e)])
     dt = Table(trows, colWidths=[62 * mm, 28 * mm, 44 * mm, 34 * mm])
     dt.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), dark), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -364,49 +368,49 @@ def build_pdf_report(db, periode, annee, mois, dept) -> bytes:
         ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#DDDDDD")),
         ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
         ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
-    story += [Paragraph("Synthèse par département", h2), Spacer(1, 2 * mm), dt, Spacer(1, 6 * mm)]
+    story += [Paragraph(_t("Synthèse par département"), h2), Spacer(1, 2 * mm), dt, Spacer(1, 6 * mm)]
 
     # --- Graphiques (mêmes que le HTML) ---
-    story.append(Paragraph("Graphiques", h2))
+    story.append(Paragraph(_t("Graphiques"), h2))
     courts = [d["court"] for d in DEPARTEMENTS]
     cols = [d["couleur"] for d in DEPARTEMENTS]
 
     # Disponibilité (camembert dispo / arrêt)
-    story.append(Paragraph("Disponibilité", h3))
-    story.append(_pie_drawing(["Disponible", "Temps d'arrêt"],
+    story.append(Paragraph(_t("Disponibilité"), h3))
+    story.append(_pie_drawing([_t("Disponible"), _t("Temps d'arrêt")],
                               [round(k["disponibilite"], 1), round(100 - k["disponibilite"], 1)],
                               [THEME["success"], THEME["danger"]]))
     story.append(Spacer(1, 3 * mm))
 
     ad = kpis.arrets_by_dept(arrets)
-    story.append(Paragraph("Temps d'arrêt par département (h)", h3))
+    story.append(Paragraph(_t("Temps d'arrêt par département (h)"), h3))
     story.append(_bar_drawing(courts, [round(ad.get(d["id"], 0), 1) for d in DEPARTEMENTS], cols))
     story.append(Spacer(1, 3 * mm))
 
     cd = kpis.cout_by_dept(intervs)
     cd_items = [(d, cd.get(d["id"], 0)) for d in DEPARTEMENTS if cd.get(d["id"], 0) > 0]
-    story.append(Paragraph("Répartition du coût de maintenance", h3))
+    story.append(Paragraph(_t("Répartition du coût de maintenance"), h3))
     if cd_items:
-        story.append(_pie_drawing([d["nom"] for d, _ in cd_items], [v for _, v in cd_items],
-                                  [d["couleur"] for d, _ in cd_items]))
+        story.append(_pie_drawing([i18n.dept_label(d["id"], d["nom"]) for d, _ in cd_items],
+                                  [v for _, v in cd_items], [d["couleur"] for d, _ in cd_items]))
     else:
-        story.append(Paragraph("Aucune donnée de coût sur la période.", small))
+        story.append(Paragraph(_t("Aucune donnée"), small))
     story.append(Spacer(1, 3 * mm))
 
     ed = kpis.energie_by_dept(energie)
-    story.append(Paragraph("Énergie par département (kWh)", h3))
+    story.append(Paragraph(_t("Énergie par département (kWh)"), h3))
     story.append(_bar_drawing(courts, [round(ed.get(d["id"], 0)) for d in DEPARTEMENTS], cols))
     story.append(Spacer(1, 3 * mm))
 
     pc = kpis.interv_prev_corr_by_dept(intervs)
-    story.append(Paragraph("Interventions préventif / correctif", h3))
+    story.append(Paragraph(_t("Interventions préventif / correctif"), h3))
     story.append(_grouped_bar_drawing(courts, [pc.get(d["id"], (0, 0))[0] for d in DEPARTEMENTS],
                                       [pc.get(d["id"], (0, 0))[1] for d in DEPARTEMENTS],
                                       THEME["success"], THEME["danger"]))
     story.append(Spacer(1, 3 * mm))
 
     trend = kpis.yearly_trend(db, dept)
-    story.append(Paragraph("Tendance de disponibilité (%)", h3))
+    story.append(Paragraph(_t("Tendance de disponibilité (%)"), h3))
     story.append(_line_drawing([r["year"] for r in trend], [round(r["disponibilite"], 1) for r in trend]))
 
     doc.build(story)

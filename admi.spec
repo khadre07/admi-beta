@@ -45,6 +45,7 @@ hiddenimports += [
     "reportlab.graphics.charts.legends",
     "reportlab.graphics.renderPDF",
     "sqlalchemy.dialects.sqlite",
+    "smtplib", "ssl", "email.message", "urllib.request",
 ]
 
 # Code source de l'application (importé/exécuté à l'exécution, via sys.path).
