@@ -45,7 +45,9 @@ def _data_dir() -> Path:
         base = Path(root) / "ADMI"
         base.mkdir(parents=True, exist_ok=True)
         return base
-    return Path(__file__).resolve().parent.parent / "data"
+    base = Path(__file__).resolve().parent.parent / "data"
+    base.mkdir(parents=True, exist_ok=True)   # cloud : le dossier peut ne pas exister
+    return base
 
 
 DATA_DIR = _data_dir()

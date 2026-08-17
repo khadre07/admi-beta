@@ -5,6 +5,7 @@ Lancement :  streamlit run app.py
 from __future__ import annotations
 
 import json
+import os
 import time
 from datetime import date, datetime, timedelta
 
@@ -1226,7 +1227,8 @@ def render_login_screen():
 def main():
     i18n.set_lang(st.session_state.get("lang", "fr"))  # langue courante pour charts/rapports
     # 1) licence  2) connexion  3) démarrage animé  4) application
-    if not lic.is_activated():
+    # ADMI_SKIP_LICENSE=1 (secret Streamlit Cloud) : déploiement de démo sans licence.
+    if not os.environ.get("ADMI_SKIP_LICENSE") and not lic.is_activated():
         render_license_screen()
         return
     if not st.session_state.get("user"):
