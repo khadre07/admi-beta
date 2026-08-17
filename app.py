@@ -13,7 +13,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 from streamlit_calendar import calendar as st_calendar
 
-from admi import auth, charts, kpis, license as lic, report
+from admi import auth, charts, kpis, license as lic, report, update
 from admi.config import (DEPARTEMENTS, DOW, MOIS, STATUTS_MACHINE, THEME,
                          TYPES_ARRET, TYPES_INTERV, TYPES_PLAN, dep)
 from admi.data import (DATA_FILE, delete_record, load_db, save_db,
@@ -50,6 +50,8 @@ def _close_dialog(prefix):
 
 def _crud_controls(db, prefix, add_label, entries, fmt):
     """Bouton « + Ajouter » + sélecteur d'édition. Ouvre le dialogue via *_target."""
+    if not can_edit():
+        return  # lecteur : lecture seule, aucun contrôle de saisie
     top = st.columns([1, 2])
     with top[0]:
         if st.button(add_label, type="primary", key=f"{prefix}_add"):
@@ -85,9 +87,23 @@ PLOTLY_CFG = {
 # État & helpers
 # ---------------------------------------------------------------------------
 def get_db():
-    if "db" not in st.session_state:
-        st.session_state.db = load_db()
-    return st.session_state.db
+    # Rechargé à chaque exécution : chaque utilisateur voit les modifications des
+    # autres (source de vérité = la base SQLite/PostgreSQL).
+    db = load_db()
+    st.session_state.db = db
+    return db
+
+
+def _role():
+    return st.session_state.get("role", "viewer")
+
+
+def can_edit():
+    return _role() in ("admin", "operator")
+
+
+def is_admin():
+    return _role() == "admin"
 
 
 def fmt_num(n, dec=0):
@@ -387,6 +403,11 @@ def view_import(db):
                            file_name="ADMI_modele_import.xlsx",
                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
+    if not can_edit():
+        st.info("L'import de données est réservé aux comptes éditeurs (operator / admin). "
+                "L'export ci-dessus reste disponible.")
+        return
+
     section_title("Importer un fichier")
     up = st.file_uploader(
         "Fichier Excel, CSV, Word ou PDF (Machines, Arrêts, Énergie, Interventions, Planning)",
@@ -589,6 +610,15 @@ def view_settings(db):
         "département est en marche continue (24h/24, 7j/7) — décochez les jours non travaillés et ajustez "
         "les heures/jour (ex : Administration = 8h, du lundi au vendredi).</div>", unsafe_allow_html=True)
 
+    if not is_admin():
+        rows = [{"Département": d["nom"],
+                 "Heures/j": db.dept_schedule(d["id"])["heuresParJour"],
+                 "Total/sem": round(sum(db.dept_schedule(d["id"])["jours"]) * db.dept_schedule(d["id"])["heuresParJour"], 1)}
+                for d in DEPARTEMENTS]
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        st.info("Modification réservée aux administrateurs.")
+        return
+
     with st.form("settings_form"):
         head = st.columns([2.4, 1] + [0.5] * 7 + [1])
         for col, label in zip(head, ["Département", "Heures/j", *DOW, "Total/sem"]):
@@ -616,6 +646,52 @@ def view_settings(db):
 
 
 # ---------------------------------------------------------------------------
+# SECTION : Utilisateurs (admin uniquement)
+# ---------------------------------------------------------------------------
+def view_users(db):
+    users = auth.list_users()
+    section_title("Comptes utilisateurs")
+    st.dataframe(pd.DataFrame([{"Identifiant": u, "Rôle": r} for u, r in users.items()]),
+                 width="stretch", hide_index=True)
+    st.caption("Rôles — **admin** : tout · **operator** : saisie des données · **viewer** : lecture seule.")
+
+    section_title("Ajouter un utilisateur")
+    with st.form("add_user_form", clear_on_submit=True):
+        c = st.columns([2, 2, 1.4, 1.1])
+        nu = c[0].text_input("Identifiant")
+        npw = c[1].text_input("Mot de passe", type="password")
+        nrole = c[2].selectbox("Rôle", auth.ROLES, index=auth.ROLES.index("operator"))
+        if c[3].form_submit_button("Ajouter", type="primary"):
+            ok, msg = auth.create_user(nu, npw, nrole)
+            (st.success if ok else st.error)(msg)
+            if ok:
+                st.rerun()
+
+    section_title("Modifier / supprimer")
+    target = st.selectbox("Utilisateur", list(users.keys()), key="user_target")
+    if target:
+        cc = st.columns([1.6, 1, 1.6, 1, 1.2])
+        role = cc[0].selectbox("Rôle", auth.ROLES, index=auth.ROLES.index(users[target]), key="user_role")
+        if cc[1].button("Appliquer", key="user_role_btn"):
+            ok, msg = auth.set_role(target, role)
+            (st.success if ok else st.error)(msg)
+            if ok:
+                st.rerun()
+        newpw = cc[2].text_input("Nouveau mot de passe", type="password", key="user_pw")
+        if cc[3].button("Réinit.", key="user_pw_btn"):
+            if newpw:
+                auth.set_password(target, newpw)
+                st.success("Mot de passe réinitialisé.")
+            else:
+                st.warning("Saisissez un mot de passe.")
+        if cc[4].button("Supprimer", key="user_del_btn"):
+            ok, msg = auth.delete_user(target)
+            (st.success if ok else st.error)(msg)
+            if ok:
+                st.rerun()
+
+
+# ---------------------------------------------------------------------------
 # Navigation
 # ---------------------------------------------------------------------------
 def _nav():
@@ -631,6 +707,8 @@ def _nav():
         "Import / Export": view_import,
         "Paramètres": view_settings,
     }
+    if is_admin():
+        sections["Utilisateurs"] = view_users
     subtitles = {
         "Tableau de bord": "Vue d'ensemble des indicateurs de maintenance",
         "Planning": "Calendrier des interventions planifiées (mois / année)",
@@ -641,6 +719,7 @@ def _nav():
         "Rapports": "Générer un rapport complet (HTML / PDF)",
         "Import / Export": "Alimenter ADMI avec vos données, ou exporter une sauvegarde",
         "Paramètres": "Heures de travail de l'usine par département",
+        "Utilisateurs": "Gestion des comptes et des rôles",
     }
     return sections, subtitles
 
@@ -1014,8 +1093,10 @@ def render_login_screen():
         user = st.text_input("Identifiant", key="login_user")
         pw = st.text_input("Mot de passe", type="password", key="login_pw")
         if st.button("Se connecter", type="primary", width="stretch"):
-            if auth.verify_login(user, pw):
-                st.session_state.user = user.strip()
+            res = auth.verify_login(user, pw)
+            if res:
+                st.session_state.user = res["username"]
+                st.session_state.role = res["role"]
                 st.session_state.booted = False
                 st.rerun()
             else:
@@ -1053,10 +1134,19 @@ def main():
                     f'{len(db.machines)} machines · {len(db.arrets)} arrêts · '
                     f'{len(db.interventions)} interventions</div>', unsafe_allow_html=True)
         st.write("")
-        st.caption(f"Connecté : **{st.session_state.get('user', '—')}**")
+        st.caption(f"Connecté : **{st.session_state.get('user', '—')}** · rôle : *{_role()}*")
         if st.button("Se déconnecter", width="stretch"):
             st.session_state.user = None
+            st.session_state.role = None
             st.rerun()
+
+    # Bannière de mise à jour (best-effort, vérifiée une fois par session)
+    if "update_info" not in st.session_state:
+        st.session_state.update_info = update.check()
+    if st.session_state.update_info:
+        cur, latest, url = st.session_state.update_info
+        st.warning(f"🔔 Nouvelle version **{latest}** disponible (actuelle : {cur}). "
+                   + (f"[Télécharger]({url})" if url else ""))
 
     # Transition animée lors d'un changement de section
     if st.session_state.get("_section") != choice:

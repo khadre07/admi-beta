@@ -39,7 +39,9 @@ avec **écran de licence**, **connexion** et **exécutable autonome**.
   (graphiques natifs), plus une **fiche PDF par intervention**.
 - **Import / Export** — Excel, CSV, **Word (.docx)** et **PDF** (reconnaissance souple des tableaux).
 - **Paramètres** — heures de travail par département (base des calculs de disponibilité).
-- **Sécurité produit** — **licence** (codes générés par `licgen`) + **connexion** (login).
+- **Sécurité produit** — **licence** (codes générés par `licgen`) + **connexion** avec
+  **rôles** (admin / operator / viewer) et **gestion des utilisateurs**.
+- **Multi-utilisateurs** — données rechargées en direct depuis la base partagée.
 - **Rendu soigné** — charte sombre, écran d'accueil et loaders animés (engrenages).
 
 ---

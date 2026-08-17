@@ -1,4 +1,4 @@
-name: Build ADMI (Windows / Linux / macOS)
+name: Build & Test ADMI (Windows / Linux / macOS)
 
 # Lancement manuel (onglet Actions -> Run workflow) ou à chaque push.
 on:
@@ -14,10 +14,13 @@ jobs:
         include:
           - os: windows-latest
             name: ADMI-windows
+            bin: dist/ADMI/ADMI.exe
           - os: ubuntu-latest
             name: ADMI-linux
+            bin: dist/ADMI/ADMI
           - os: macos-13          # Intel
             name: ADMI-macos-intel
+            bin: dist/ADMI.app/Contents/MacOS/ADMI
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -29,10 +32,36 @@ jobs:
       - name: Installer les dépendances
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller
+          pip install -r requirements.txt pyinstaller pytest
+
+      - name: Tests (pytest, multi-OS)
+        run: python -m pytest tests -q
 
       - name: Construire l'exécutable
         run: pyinstaller admi.spec --noconfirm
+
+      - name: Smoke test — le binaire démarre et répond
+        shell: bash
+        env:
+          ADMI_NO_BROWSER: "1"
+        run: |
+          BIN="${{ matrix.bin }}"
+          "$BIN" &
+          PID=$!
+          ok=0
+          for i in $(seq 1 60); do
+            if curl -s http://localhost:8533/_stcore/health | grep -q ok; then ok=1; break; fi
+            sleep 2
+          done
+          kill "$PID" 2>/dev/null || true
+          if [ "$ok" != "1" ]; then echo "::error::Le binaire n'a pas démarré sur ${{ matrix.os }}"; exit 1; fi
+          echo "✓ Démarrage vérifié sur ${{ matrix.os }}"
+
+      - name: Installeur DMG (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          chmod +x build_dmg.sh
+          ./build_dmg.sh
 
       - name: Publier l'artefact
         uses: actions/upload-artifact@v4

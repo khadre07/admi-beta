@@ -40,7 +40,8 @@ def _open_browser_when_ready():
         except Exception:
             pass
         time.sleep(0.5)
-    webbrowser.open(url)
+    if not os.environ.get("ADMI_NO_BROWSER"):   # désactivé en CI / serveur
+        webbrowser.open(url)
 
 
 def main():

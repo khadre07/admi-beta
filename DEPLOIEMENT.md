@@ -86,7 +86,10 @@ Déjà couvert : `dist/ADMI.app` (voir `README.md`). Build via
 
 ## Notes communes
 - **Licence** : chaque installation demande un code (généré par `licgen`).
-- **Connexion** : `admin` / `admin` par défaut (à changer).
+- **Connexion & rôles** : `admin` / `admin` par défaut (à changer). Rôles
+  **admin** (tout), **operator** (saisie), **viewer** (lecture). Gestion des
+  comptes dans la section **Utilisateurs** (admin).
+- **Signature / installeurs (.dmg, .exe)** : voir **[SIGNATURE.md](SIGNATURE.md)**.
 - **Stockage** : `ADMI_DATA_DIR` force l'emplacement des données (utilisé par
   Docker) ; sinon dossier utilisateur standard selon l'OS.
 - **Windows/Linux** ne sont pas signés non plus : mêmes avertissements de
