@@ -13,7 +13,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 from streamlit_calendar import calendar as st_calendar
 
-from admi import auth, charts, kpis, license as lic, report, update
+from admi import auth, charts, i18n, kpis, license as lic, report, update
 from admi.config import (DEPARTEMENTS, DOW, MOIS, STATUTS_MACHINE, THEME,
                          TYPES_ARRET, TYPES_INTERV, TYPES_PLAN, dep)
 from admi.data import (DATA_FILE, delete_record, load_db, save_db,
@@ -25,16 +25,16 @@ def _machine_opts(db):
 
 
 def _dept_picker(label, current="am", key=None):
-    names = [d["nom"] for d in DEPARTEMENTS]
     ids = [d["id"] for d in DEPARTEMENTS]
     idx = ids.index(current) if current in ids else 0
-    return ids[names.index(st.selectbox(label, names, index=idx, key=key))]
+    return st.selectbox(T(label), ids, index=idx,
+                        format_func=lambda i: TD(i, dep(i)["nom"]), key=key)
 
 
 def _open_edit(prefix, entries, fmt):
     """Sélecteur d'édition : renvoie l'id choisi (ou None). Réinitialisé après action."""
     opts = ["—"] + [fmt(e) for e in entries]
-    sel = st.selectbox("Modifier un enregistrement existant", opts, key=f"{prefix}_editsel")
+    sel = st.selectbox(T("Modifier un enregistrement existant"), opts, key=f"{prefix}_editsel")
     if sel != "—":
         return entries[opts.index(sel) - 1]["id"]
     return None
@@ -54,7 +54,7 @@ def _crud_controls(db, prefix, add_label, entries, fmt):
         return  # lecteur : lecture seule, aucun contrôle de saisie
     top = st.columns([1, 2])
     with top[0]:
-        if st.button(add_label, type="primary", key=f"{prefix}_add"):
+        if st.button(T(add_label), type="primary", key=f"{prefix}_add"):
             st.session_state[f"{prefix}_target"] = ("new", None)
     with top[1]:
         eid = _open_edit(prefix, entries, fmt)
@@ -94,6 +94,26 @@ def get_db():
     return db
 
 
+def _lang():
+    return st.session_state.get("lang", "fr")
+
+
+def T(s):
+    return i18n.t(s, _lang())
+
+
+def TD(dept_id, nom_fr):
+    return i18n.dept_label(dept_id, nom_fr, _lang())
+
+
+def TT(value):
+    return i18n.type_label(value, _lang())
+
+
+def _months():
+    return i18n.MOIS_EN if _lang() == "en" else MOIS
+
+
 def _role():
     return st.session_state.get("role", "viewer")
 
@@ -116,7 +136,7 @@ def fmt_money(n):
 
 
 def section_title(text, extra=""):
-    st.markdown(f'<div class="section-title">{text}<div class="line"></div>{extra}</div>',
+    st.markdown(f'<div class="section-title">{T(text)}<div class="line"></div>{extra}</div>',
                 unsafe_allow_html=True)
 
 
@@ -126,40 +146,48 @@ def kpi_card(label, value, unit="", delta="", color=None, value_size=30):
     delta_html = f'<div class="delta">{delta}</div>' if delta else ""
     st.markdown(
         f'<div class="kpi-card"><div class="bar" style="background:{color}"></div>'
-        f'<div class="label">{label}</div>'
+        f'<div class="label">{T(label)}</div>'
         f'<div class="value" style="font-size:{value_size}px">{value}{unit_html}</div>'
         f'{delta_html}</div>', unsafe_allow_html=True)
 
 
 def dept_selectbox(label, key, include_all=True):
-    opts, ids = [], []
-    if include_all:
-        opts.append("Tous les départements"); ids.append("all")
-    for d in DEPARTEMENTS:
-        opts.append(d["nom"]); ids.append(d["id"])
-    choice = st.selectbox(label, opts, key=key)
-    return ids[opts.index(choice)]
+    ids = (["all"] if include_all else []) + [d["id"] for d in DEPARTEMENTS]
+
+    def _fmt(i):
+        return T("Tous les départements") if i == "all" else TD(i, dep(i)["nom"])
+
+    return st.selectbox(T(label), ids, format_func=_fmt, key=key)
 
 
 def plot(fig):
-    # theme=None : on garde notre template sombre "admi" au lieu du thème Plotly de Streamlit
+    # theme=None : on garde notre template sombre "admi" au lieu du thème Plotly de Streamlit.
+    # Clé unique par graphique (compteur réinitialisé à chaque run) pour éviter les
+    # collisions d'ID auto-générés (StreamlitDuplicateElementId).
+    st.session_state["_plot_n"] = st.session_state.get("_plot_n", 0) + 1
     with st.container(border=True):
-        st.plotly_chart(fig, width="stretch", config=PLOTLY_CFG, theme=None)
+        st.plotly_chart(fig, width="stretch", config=PLOTLY_CFG, theme=None,
+                        key=f"plot_{st.session_state['_plot_n']}")
 
 
 # ---------------------------------------------------------------------------
 # SECTION : Tableau de bord
 # ---------------------------------------------------------------------------
+def _month_fmt(m):
+    return _months()[MOIS.index(m)]
+
+
 def view_dashboard(db):
     c1, c2, c3, c4 = st.columns([1, 1, 1, 1.4])
     with c1:
-        periode = st.selectbox("Période", ["Mensuelle", "Annuelle"], key="dash_periode")
+        periode = st.selectbox(T("Période"), ["Mensuelle", "Annuelle"], format_func=T, key="dash_periode")
         periode = "mois" if periode == "Mensuelle" else "annee"
     with c2:
-        mois = MOIS.index(st.selectbox("Mois", MOIS, index=min(7, 11), key="dash_mois")) \
+        mois = MOIS.index(st.selectbox(T("Mois"), MOIS, index=min(7, 11),
+                                       format_func=_month_fmt, key="dash_mois")) \
             if periode == "mois" else 0
     with c3:
-        annee = st.selectbox("Année", list(range(2020, 2027))[::-1], key="dash_annee")
+        annee = st.selectbox(T("Année"), list(range(2020, 2027))[::-1], key="dash_annee")
     with c4:
         dept = dept_selectbox("Département", "dash_dept")
 
@@ -736,13 +764,14 @@ def view_report(db):
 
     c1, c2, c3, c4 = st.columns([1, 1, 1, 1.4])
     with c1:
-        periode = "mois" if st.selectbox("Période", ["Mensuelle", "Annuelle"],
+        periode = "mois" if st.selectbox(T("Période"), ["Mensuelle", "Annuelle"], format_func=T,
                                          key="rep_periode") == "Mensuelle" else "annee"
     with c2:
-        mois = MOIS.index(st.selectbox("Mois", MOIS, index=min(7, 11), key="rep_mois")) \
+        mois = MOIS.index(st.selectbox(T("Mois"), MOIS, index=min(7, 11),
+                                       format_func=_month_fmt, key="rep_mois")) \
             if periode == "mois" else 0
     with c3:
-        annee = st.selectbox("Année", list(range(2020, 2027))[::-1], key="rep_annee")
+        annee = st.selectbox(T("Année"), list(range(2020, 2027))[::-1], key="rep_annee")
     with c4:
         dept = dept_selectbox("Département", "rep_dept")
 
@@ -829,9 +858,9 @@ def render_splash():
 # ---------------------------------------------------------------------------
 def _dialog_buttons(has_edit):
     b = st.columns(3)
-    return (b[0].button("Enregistrer", type="primary", width="stretch"),
-            (b[1].button("Supprimer", width="stretch") if has_edit else False),
-            b[2].button("Annuler", width="stretch"))
+    return (b[0].button(T("Enregistrer"), type="primary", width="stretch"),
+            (b[1].button(T("Supprimer"), width="stretch") if has_edit else False),
+            b[2].button(T("Annuler"), width="stretch"))
 
 
 @st.dialog("Machine")
@@ -1047,9 +1076,22 @@ def gears_html(label="Chargement", small=False):
       <div class="cluster"><div class="gear g1"></div><div class="gear g2"></div><div class="gear g3"></div></div>
       <div class="word"><span>A</span><span>D</span><span>M</span><span>I</span></div>
       <div class="dots">{dots}</div>
-      <div class="lbl">{label}</div>
+      <div class="lbl">{T(label)}</div>
     </div>
     """
+
+
+def _lang_toggle():
+    """Petit sélecteur de langue pour les écrans licence / connexion."""
+    langs = list(i18n.LANGS.keys())
+    col = st.columns([3, 1])[1]
+    with col:
+        choice = st.radio("lang", langs, index=langs.index(_lang()),
+                          format_func=lambda c: i18n.LANGS[c], horizontal=True,
+                          label_visibility="collapsed", key="lang_toggle")
+    if choice != _lang():
+        st.session_state.lang = choice
+        st.rerun()
 
 
 def render_section_loader():
@@ -1066,33 +1108,39 @@ def _hide_chrome_css():
 
 def render_license_screen():
     _hide_chrome_css()
-    st.markdown(f'<div style="display:flex;justify-content:center;margin-top:3vh">{gears_html("Activation requise")}</div>',
+    _lang_toggle()
+    st.markdown(f'<div style="display:flex;justify-content:center;margin-top:2vh">{gears_html("Activation requise")}</div>',
                 unsafe_allow_html=True)
     col = st.columns([1, 1.25, 1])[1]
+    en = _lang() == "en"
     with col:
-        st.markdown("### Licence d'utilisation")
-        st.caption("Entrez votre code de licence ADMI pour activer le logiciel. "
+        st.markdown("### " + T("Licence d'utilisation"))
+        st.caption("Enter your ADMI license code to activate the software (provided by your reseller, generated with `licgen`)."
+                   if en else
+                   "Entrez votre code de licence ADMI pour activer le logiciel. "
                    "Un code est fourni par votre revendeur (généré via `licgen`).")
-        code = st.text_input("Code de licence", placeholder="ADMI-XXXX-XXXX-XXXX-XXXX", key="lic_code")
-        name = st.text_input("Nom / société (optionnel)", key="lic_name")
-        if st.button("Activer la licence", type="primary", width="stretch"):
+        code = st.text_input(T("Code de licence"), placeholder="ADMI-XXXX-XXXX-XXXX-XXXX", key="lic_code")
+        name = st.text_input(T("Nom / société (optionnel)"), key="lic_name")
+        if st.button(T("Activer la licence"), type="primary", width="stretch"):
             if lic.activate(code, name.strip()):
-                st.success("Licence activée. Bienvenue.")
+                st.success("License activated. Welcome." if en else "Licence activée. Bienvenue.")
                 st.rerun()
             else:
-                st.error("Code de licence invalide. Vérifiez la saisie.")
+                st.error("Invalid license code." if en else "Code de licence invalide. Vérifiez la saisie.")
 
 
 def render_login_screen():
     _hide_chrome_css()
-    st.markdown(f'<div style="display:flex;justify-content:center;margin-top:4vh">{gears_html("Connexion")}</div>',
+    _lang_toggle()
+    st.markdown(f'<div style="display:flex;justify-content:center;margin-top:2vh">{gears_html("Connexion")}</div>',
                 unsafe_allow_html=True)
     col = st.columns([1, 1.25, 1])[1]
+    en = _lang() == "en"
     with col:
-        st.markdown("### Connexion")
-        user = st.text_input("Identifiant", key="login_user")
-        pw = st.text_input("Mot de passe", type="password", key="login_pw")
-        if st.button("Se connecter", type="primary", width="stretch"):
+        st.markdown("### " + T("Connexion"))
+        user = st.text_input(T("Identifiant"), key="login_user")
+        pw = st.text_input(T("Mot de passe"), type="password", key="login_pw")
+        if st.button(T("Se connecter"), type="primary", width="stretch"):
             res = auth.verify_login(user, pw)
             if res:
                 st.session_state.user = res["username"]
@@ -1100,8 +1148,9 @@ def render_login_screen():
                 st.session_state.booted = False
                 st.rerun()
             else:
-                st.error("Identifiant ou mot de passe incorrect.")
-        st.caption("Compte par défaut : **admin / admin** (à modifier en production).")
+                st.error("Wrong username or password." if en else "Identifiant ou mot de passe incorrect.")
+        st.caption("Default account: **admin / admin** (change in production)." if en else
+                   "Compte par défaut : **admin / admin** (à modifier en production).")
 
 
 def main():
@@ -1124,18 +1173,28 @@ def main():
 
     db = get_db()
     SECTIONS, SUBTITLES = _nav()
+    lbl = {"en": "Machines: {m} · stops: {a} · interventions: {i}",
+           "fr": "{m} machines · {a} arrêts · {i} interventions"}[_lang()]
     with st.sidebar:
-        st.markdown('<div class="admi-brand"><span class="dot"></span>ADMI</div>'
-                    '<div class="admi-sub">Maintenance Industrielle</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="admi-brand"><span class="dot"></span>ADMI</div>'
+                    f'<div class="admi-sub">{T("Maintenance Industrielle")}</div>', unsafe_allow_html=True)
         st.write("")
-        choice = st.radio("Navigation", list(SECTIONS.keys()), label_visibility="collapsed")
+        choice = st.radio("Navigation", list(SECTIONS.keys()), format_func=T,
+                          label_visibility="collapsed")
         st.markdown(f'<div style="margin-top:20px; font-size:10.5px; color:{THEME["muted2"]}; '
-                    f'line-height:1.5">Usine — 8 départements de production<br>Données : '
-                    f'{len(db.machines)} machines · {len(db.arrets)} arrêts · '
-                    f'{len(db.interventions)} interventions</div>', unsafe_allow_html=True)
+                    f'line-height:1.5">' + lbl.format(m=len(db.machines), a=len(db.arrets),
+                                                       i=len(db.interventions)) + '</div>',
+                    unsafe_allow_html=True)
         st.write("")
-        st.caption(f"Connecté : **{st.session_state.get('user', '—')}** · rôle : *{_role()}*")
-        if st.button("Se déconnecter", width="stretch"):
+        langs = list(i18n.LANGS.keys())
+        new_lang = st.radio(T("Langue"), langs, index=langs.index(_lang()),
+                            format_func=lambda c: i18n.LANGS[c], horizontal=True)
+        if new_lang != _lang():
+            st.session_state.lang = new_lang
+            st.rerun()
+        _conn = {"fr": "Connecté", "en": "Signed in"}[_lang()]
+        st.caption(f"{_conn} : **{st.session_state.get('user', '—')}** · {T('Rôle')} : *{_role()}*")
+        if st.button(T("Se déconnecter"), width="stretch"):
             st.session_state.user = None
             st.session_state.role = None
             st.rerun()
@@ -1157,9 +1216,10 @@ def main():
         time.sleep(0.5)
         loader.empty()
 
-    st.markdown(f"# {choice}")
+    st.markdown(f"# {T(choice)}")
     st.markdown(f'<div style="color:{THEME["muted2"]}; font-size:12px; margin-top:-12px; '
-                f'margin-bottom:16px">{SUBTITLES[choice]}</div>', unsafe_allow_html=True)
+                f'margin-bottom:16px">{T(SUBTITLES[choice])}</div>', unsafe_allow_html=True)
+    st.session_state["_plot_n"] = 0   # clés de graphiques stables par run
     SECTIONS[choice](db)
 
 
