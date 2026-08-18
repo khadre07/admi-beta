@@ -120,7 +120,7 @@ def build_html_report(db, periode, annee, mois, dept) -> bytes:
   <div class="card"><div class="ct">{_t('Synthèse par département')}</div>{table_html}</div>
   <div class="grid2">{''.join(chart_html[:4])}</div>
   <div class="grid2">{''.join(chart_html[4:])}</div>
-  <div class="foot">AMI — {_t('Analyse des Machines Industrielles')} · {_t('Rapport de maintenance industrielle · rapport généré automatiquement')}</div>
+  <div class="foot">AMI — {_t('Analyse de Maintenance Industrielle')} · {_t('Rapport de maintenance industrielle · rapport généré automatiquement')}</div>
 </body></html>"""
     return html.encode("utf-8")
 

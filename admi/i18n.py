@@ -107,6 +107,7 @@ _EN = {
     "Maintenance Industrielle": "Industrial Maintenance",
     "Machines Industrielles": "Industrial Machines",
     "Analyse des Machines Industrielles": "Industrial Machines Analysis",
+    "Analyse de Maintenance Industrielle": "Industrial Maintenance Analysis",
     # Rôles / utilisateurs
     "Rôle": "Role", "Nouveau mot de passe": "New password", "Utilisateur": "User",
     "admin": "admin", "operator": "operator", "viewer": "viewer",

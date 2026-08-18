@@ -74,7 +74,7 @@ from admi.io_excel import (LABELS, TYPES, apply_import, export_bytes,
                            parse_import, template_bytes)
 from admi.theme import CSS, register_template
 
-st.set_page_config(page_title="AMI — Analyse des Machines Industrielles",
+st.set_page_config(page_title="AMI — Analyse de Maintenance Industrielle",
                    page_icon="🏭", layout="wide", initial_sidebar_state="expanded")
 st.markdown(CSS, unsafe_allow_html=True)
 register_template()
@@ -905,7 +905,7 @@ def render_splash():
     </style>
     <div class="admi-splash">
       <div class="logo"><span class="sq"></span>AMI</div>
-      <div class="sub">{T("Analyse des Machines Industrielles")}</div>
+      <div class="sub">{T("Analyse de Maintenance Industrielle")}</div>
       <div class="ring"></div>
       <div class="dots">{dots}</div>
       <div class="load">Chargement du tableau de bord</div>
@@ -1113,11 +1113,12 @@ def energie_dialog(db, target):
 # ---------------------------------------------------------------------------
 # LOGO AMI — SVG vectoriel animé (engrenage + jauge radar + ECG + signal)
 # ---------------------------------------------------------------------------
-_LOGO_NAVY = "#2E5C9E"
-_LOGO_NAVY_D = "#1B3E70"
+# Engrenage (cercle) dans le jaune de l'application ; éléments techniques en cyan.
+_LOGO_NAVY = "#F2A93B"      # jaune/orangé de l'app (l'engrenage)
+_LOGO_NAVY_D = "#8A6423"
 _LOGO_CYAN = "#22D3EE"
 _LOGO_CYAN2 = "#38BDF8"
-_LOGO_GOLD = "#C79A3E"
+_LOGO_GOLD = "#F5C36B"
 _LOGO_GRAY = "#7C8AA0"
 
 
@@ -1330,7 +1331,7 @@ def main():
            "fr": "{m} machines · {a} arrêts · {i} interventions"}[_lang()]
     with st.sidebar:
         st.markdown('<div class="admi-brand">' + logo_svg(34) + 'AMI</div>'
-                    + f'<div class="admi-sub" style="margin-left:43px">{T("Machines Industrielles")}</div>',
+                    + f'<div class="admi-sub" style="margin-left:43px">{T("Analyse de Maintenance Industrielle")}</div>',
                     unsafe_allow_html=True)
         st.write("")
         choice = st.radio("Navigation", list(SECTIONS.keys()), format_func=T,
