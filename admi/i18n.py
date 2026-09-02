@@ -160,7 +160,7 @@ _EN = {
         "This machine has just been reported as broken down in AMI.",
     "Un arrêt de type « Panne » vient d'être enregistré dans AMI.":
         "A downtime event of type “Breakdown” has just been recorded in AMI.",
-    "Test de configuration": "Configuration test",
+    "Test de configuration": "Configuration test", "Échec du test": "Test failed",
     "Si vous lisez ce message, les alertes AMI sont correctement configurées.":
         "If you are reading this, AMI alerts are correctly configured.",
     "Envoyé le": "Sent on", "Serveur": "Server", "Destinataires": "Recipients",

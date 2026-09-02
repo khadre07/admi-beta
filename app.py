@@ -1180,12 +1180,17 @@ def view_alerts(db):
         st.rerun()
     if st.button(T("Envoyer une alerte de test")):
         cfg_test = get_alert_config()
-        res = alerts.notify(
-            cfg_test, T("Test de configuration"),
-            T("Si vous lisez ce message, les alertes AMI sont correctement configurées."),
-            {T("Envoyé le"): datetime.now().strftime("%d/%m/%Y %H:%M"),
-             T("Serveur"): cfg_test.get("smtp", {}).get("host", "—"),
-             T("Destinataires"): ", ".join(cfg_test.get("emails", [])) or "—"})
+        # Un bouton de test rend compte de l'échec ; il ne fait pas tomber l'écran.
+        try:
+            res = alerts.notify(
+                cfg_test, T("Test de configuration"),
+                T("Si vous lisez ce message, les alertes AMI sont correctement configurées."),
+                {T("Envoyé le"): datetime.now().strftime("%d/%m/%Y %H:%M"),
+                 T("Serveur"): cfg_test.get("smtp", {}).get("host", "—"),
+                 T("Destinataires"): ", ".join(cfg_test.get("emails", [])) or "—"})
+        except Exception as exc:  # noqa: BLE001
+            st.error(f'{T("Échec du test")} : {exc}')
+            res = {}
         if not res:
             st.warning(T("Aucun canal configuré (e-mail ou SMS)."))
         for chan, (ok, msg) in res.items():
