@@ -15,14 +15,19 @@ import streamlit as st
 import streamlit.components.v1 as components
 from streamlit_calendar import calendar as st_calendar
 
-from admi import (alerts, auth, charts, config, i18n, kpis, license as lic,
-                  report, stock, update)
+# NB : les symboles ajoutés récemment (add_departement, live_clock_html) sont
+# atteints par leur module et non importés par leur nom. Streamlit Cloud relance
+# le script après un `git pull` sans redémarrer le processus : les modules déjà
+# chargés restent en mémoire, et un `from ... import <nouveau nom>` ferait
+# planter l'application entière au lieu de n'affecter que la fonction concernée.
+from admi import (alerts, auth, charts, config, data as admi_data, i18n, kpis,
+                  license as lic, report, stock, theme as admi_theme, update)
 from admi.config import (DEPARTEMENTS, DOW, MOIS, OBJECTIF_LABELS,
                          OBJECTIF_SENS, OBJECTIF_UNITES, STATUTS_MACHINE, THEME,
                          TYPES_ARRET, TYPES_INTERV, TYPES_PLAN, dep)
-from admi.data import (DATA_FILE, add_departement, delete_record,
-                       get_alert_config, load_db, save_alert_config, save_db,
-                       save_settings, uid, upsert_record)
+from admi.data import (DATA_FILE, delete_record, get_alert_config, load_db,
+                       save_alert_config, save_db, save_settings, uid,
+                       upsert_record)
 
 
 def _machine_opts(db):
@@ -74,7 +79,7 @@ STATUTS_PLAN = ["Planifié", "Réalisé", "En retard", "Annulé"]
 STATUT_EMOJI = {"Planifié": "🕓", "Réalisé": "✓", "En retard": "⚠", "Annulé": "✕"}
 from admi.io_excel import (LABELS, TYPES, apply_import, export_bytes,
                            parse_import, template_bytes)
-from admi.theme import CSS, live_clock_html, register_template
+from admi.theme import CSS, register_template
 
 st.set_page_config(page_title="AMI — Analyse de Maintenance Industrielle",
                    page_icon="🏭", layout="wide", initial_sidebar_state="expanded")
@@ -912,7 +917,7 @@ def dept_dialog(db):
 
     b1, b2 = st.columns(2)
     if b1.button(T("Enregistrer le département"), type="primary", key="dept_dlg_ok"):
-        ok, resultat = add_departement(db, nom, court, couleur)
+        ok, resultat = admi_data.add_departement(db, nom, court, couleur)
         if not ok:
             st.error(T(resultat))
         else:
@@ -974,7 +979,7 @@ def _settings_departements(db):
             st.success(T("Département enregistré."))
             st.rerun()
         else:
-            add_departement(db, nom, court, couleur)
+            admi_data.add_departement(db, nom, court, couleur)
             st.success(T("Département ajouté."))
             st.rerun()
 
@@ -1886,7 +1891,7 @@ def main():
         st.markdown(f'<div style="color:{THEME["muted2"]}; font-size:12px; margin-top:-12px; '
                     f'margin-bottom:16px">{T(SUBTITLES[choice])}</div>', unsafe_allow_html=True)
     with horloge:
-        st.iframe(live_clock_html(_lang()), height=62)
+        st.iframe(admi_theme.live_clock_html(_lang()), height=62)
     st.session_state["_plot_n"] = 0   # clés de graphiques stables par run
     SECTIONS[choice](db)
 
