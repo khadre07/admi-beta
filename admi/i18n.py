@@ -150,6 +150,20 @@ _EN = {
     "Le nom et le code court sont requis.": "Name and short code are required.",
     "Département enregistré.": "Department saved.", "Département ajouté.": "Department added.",
     "Supprimer ce département": "Delete this department",
+    # Alertes par e-mail
+    "Alerte maintenance": "Maintenance alert",
+    "Message automatique envoyé par AMI. Ne pas répondre.":
+        "Automatic message sent by AMI. Do not reply.",
+    "Message automatique envoyé par": "Automatic message sent by",
+    "Ne pas répondre à cet e-mail.": "Do not reply to this email.",
+    "Cette machine vient d'être signalée en panne dans AMI.":
+        "This machine has just been reported as broken down in AMI.",
+    "Un arrêt de type « Panne » vient d'être enregistré dans AMI.":
+        "A downtime event of type “Breakdown” has just been recorded in AMI.",
+    "Test de configuration": "Configuration test",
+    "Si vous lisez ce message, les alertes AMI sont correctement configurées.":
+        "If you are reading this, AMI alerts are correctly configured.",
+    "Envoyé le": "Sent on", "Serveur": "Server", "Destinataires": "Recipients",
     "Nouveau département": "New department",
     "Il sera immédiatement disponible dans tous les formulaires et "
     "prendra cette couleur dans tous les graphiques.":

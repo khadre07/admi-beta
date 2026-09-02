@@ -53,6 +53,9 @@ datas += [
     ("app.py", "admi_app"),
     ("admi", "admi_app/admi"),
     (".streamlit", "admi_app/.streamlit"),
+    # Logo joint aux e-mails d'alerte (les captures d'assets/ n'ont rien à faire
+    # dans le binaire — on n'embarque que celui-là).
+    ("assets/ami_logo_email.png", "admi_app/assets"),
 ]
 
 a = Analysis(

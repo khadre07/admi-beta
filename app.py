@@ -5,7 +5,6 @@ Lancement :  streamlit run app.py
 from __future__ import annotations
 
 import json
-import math
 import os
 import time
 from datetime import date, datetime, timedelta
@@ -79,6 +78,7 @@ STATUTS_PLAN = ["Planifié", "Réalisé", "En retard", "Annulé"]
 STATUT_EMOJI = {"Planifié": "🕓", "Réalisé": "✓", "En retard": "⚠", "Annulé": "✕"}
 from admi.io_excel import (LABELS, TYPES, apply_import, export_bytes,
                            parse_import, template_bytes)
+from admi.logo import CYAN as _LOGO_CYAN, logo_svg
 from admi.theme import CSS, register_template
 
 st.set_page_config(page_title="AMI — Analyse de Maintenance Industrielle",
@@ -136,12 +136,12 @@ def is_admin():
     return _role() == "admin"
 
 
-def _maybe_alert(subject, message):
+def _maybe_alert(subject, message, details=None):
     """Envoie une alerte (email/SMS) si les alertes auto sont activées. Best-effort."""
     try:
         cfg = get_alert_config()
         if cfg.get("enabled"):
-            alerts.notify(cfg, subject, message)
+            alerts.notify(cfg, subject, message, details)
     except Exception:
         pass
 
@@ -1179,7 +1179,13 @@ def view_alerts(db):
         st.success(T("Configuration enregistrée."))
         st.rerun()
     if st.button(T("Envoyer une alerte de test")):
-        res = alerts.notify(get_alert_config(), "AMI — Test", T("Ceci est un test d'alerte AMI."))
+        cfg_test = get_alert_config()
+        res = alerts.notify(
+            cfg_test, T("Test de configuration"),
+            T("Si vous lisez ce message, les alertes AMI sont correctement configurées."),
+            {T("Envoyé le"): datetime.now().strftime("%d/%m/%Y %H:%M"),
+             T("Serveur"): cfg_test.get("smtp", {}).get("host", "—"),
+             T("Destinataires"): ", ".join(cfg_test.get("emails", [])) or "—"})
         if not res:
             st.warning(T("Aucun canal configuré (e-mail ou SMS)."))
         for chan, (ok, msg) in res.items():
@@ -1363,8 +1369,12 @@ def machine_dialog(db, target):
             rec = {**m, **data} if m else {"id": uid(), **data}
             upsert_record(db, "machines", rec)
             if statut == "En panne" and (m is None or m.get("statut") != "En panne"):
-                _maybe_alert(f"AMI — {i18n.type_label('En panne')} : {nom.strip()}",
-                             f"{nom.strip()} · {i18n.dept_label(deptid, dep(deptid)['nom'])}")
+                _maybe_alert(
+                    f"AMI — {i18n.type_label('En panne')} : {nom.strip()}",
+                    T("Cette machine vient d'être signalée en panne dans AMI."),
+                    {T("Machine"): nom.strip(),
+                     T("Département"): i18n.dept_label(deptid, dep(deptid)["nom"]),
+                     T("Statut"): i18n.type_label("En panne")})
             _close_dialog("mach"); st.rerun()
     if delete and m:
         delete_record(db, "machines", m["id"])
@@ -1509,8 +1519,14 @@ def arret_dialog(db, target):
             upsert_record(db, "arrets", rec)
             if a is None and typ == "Panne":
                 mn = db.machine_name(machine_id)
-                _maybe_alert(f"AMI — {i18n.t('Panne')} : {mn}",
-                             f"{mn} · {cause.strip() or '—'} · {debut.strftime('%d/%m/%Y %H:%M')}")
+                _maybe_alert(
+                    f"AMI — {i18n.t('Panne')} : {mn}",
+                    T("Un arrêt de type « Panne » vient d'être enregistré dans AMI."),
+                    {T("Machine"): mn,
+                     T("Département"): i18n.dept_label(db.machine_dept(machine_id),
+                                                       dep(db.machine_dept(machine_id))["nom"]),
+                     T("Cause"): cause.strip() or "—",
+                     T("Début"): debut.strftime("%d/%m/%Y %H:%M")})
             _close_dialog("arret"); st.rerun()
     if delete and a:
         delete_record(db, "arrets", a["id"])
@@ -1618,64 +1634,6 @@ def energie_dialog(db, target):
 # LOGO AMI — SVG vectoriel animé (engrenage + jauge radar + ECG + signal)
 # ---------------------------------------------------------------------------
 # Engrenage (cercle) dans le jaune de l'application ; éléments techniques en cyan.
-_LOGO_NAVY = "#F2A93B"      # jaune/orangé de l'app (l'engrenage)
-_LOGO_NAVY_D = "#8A6423"
-_LOGO_CYAN = "#22D3EE"
-_LOGO_CYAN2 = "#38BDF8"
-_LOGO_GOLD = "#F5C36B"
-_LOGO_GRAY = "#7C8AA0"
-
-
-def _arc_path(r, a0, a1, cx=60, cy=60):
-    p0 = (cx + r * math.cos(math.radians(a0)), cy - r * math.sin(math.radians(a0)))
-    p1 = (cx + r * math.cos(math.radians(a1)), cy - r * math.sin(math.radians(a1)))
-    return f"M {p0[0]:.1f} {p0[1]:.1f} A {r} {r} 0 0 0 {p1[0]:.1f} {p1[1]:.1f}"
-
-
-def logo_svg(size=120, animated=True):
-    teeth = "".join(f'<rect x="56.7" y="4.5" width="6.6" height="13" rx="1.6" '
-                    f'transform="rotate({k*30} 60 60)"/>' for k in range(12))
-    ecg_pts = [(22, 60), (41, 60), (46, 60), (49, 55), (52, 60), (55, 41), (60, 81),
-               (64, 49), (67, 60), (73, 60), (98, 60)]
-    ecg = " ".join(f"{x},{y}" for x, y in ecg_pts)
-    gray = _arc_path(33, -70, -18)
-    rx, ry = 60 + 32 * math.cos(math.radians(42)), 60 - 32 * math.sin(math.radians(42))
-    a = (lambda css: css) if animated else (lambda css: "")
-    return f'''<svg viewBox="0 0 120 120" width="{size}" height="{size}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="AMI">
-      <defs><filter id="glow"><feGaussianBlur stdDeviation="1.1" result="b"/>
-        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
-      <style>
-        @keyframes spin{{to{{transform:rotate(360deg)}}}}
-        @keyframes draw{{0%{{stroke-dashoffset:280}}55%{{stroke-dashoffset:0}}100%{{stroke-dashoffset:-280}}}}
-        @keyframes sig{{0%,100%{{opacity:.18}}50%{{opacity:1}}}}
-        @keyframes hub{{0%,100%{{opacity:1}}50%{{opacity:.55}}}}
-        .gear{{transform-origin:60px 60px;{a("animation:spin 26s linear infinite;")}}}
-        .sweep{{transform-origin:60px 60px;{a("animation:spin 4.6s linear infinite;")}}}
-        .ecg{{stroke-dasharray:280;{a("animation:draw 2.8s linear infinite;")}}}
-        .s1{{{a("animation:sig 1.7s ease-in-out infinite;")}}}
-        .s2{{{a("animation:sig 1.7s ease-in-out .22s infinite;")}}}
-        .s3{{{a("animation:sig 1.7s ease-in-out .44s infinite;")}}}
-        .hub{{{a("animation:hub 1.7s ease-in-out infinite;")}}}
-      </style>
-      <g class="gear" fill="{_LOGO_NAVY}"><circle cx="60" cy="60" r="43.5" fill="none"
-         stroke="{_LOGO_NAVY}" stroke-width="12"/>{teeth}</g>
-      <circle cx="60" cy="60" r="37" fill="#0A1220"/>
-      <circle cx="60" cy="60" r="32" fill="none" stroke="{_LOGO_GOLD}" stroke-width="2.4"
-              stroke-dasharray="150 62" transform="rotate(-96 60 60)"/>
-      <path d="{gray}" fill="none" stroke="{_LOGO_GRAY}" stroke-width="2.4" stroke-linecap="round"/>
-      <g class="sweep"><line x1="60" y1="60" x2="{rx:.1f}" y2="{ry:.1f}"
-         stroke="{_LOGO_CYAN}" stroke-width="2" stroke-linecap="round" filter="url(#glow)"/></g>
-      <g fill="none" stroke="{_LOGO_CYAN2}" stroke-width="2.6" stroke-linecap="round" filter="url(#glow)">
-        <path class="s1" d="{_arc_path(13, 18, 66)}"/>
-        <path class="s2" d="{_arc_path(20, 18, 66)}"/>
-        <path class="s3" d="{_arc_path(27, 18, 66)}"/></g>
-      <polyline class="ecg" points="{ecg}" fill="none" stroke="{_LOGO_CYAN}" stroke-width="2.7"
-                stroke-linejoin="round" stroke-linecap="round" filter="url(#glow)"/>
-      <circle class="hub" cx="60" cy="60" r="5.6" fill="{_LOGO_NAVY}" stroke="{_LOGO_CYAN}" stroke-width="1.4"/>
-      <circle cx="60" cy="60" r="2.4" fill="{_LOGO_CYAN}"/>
-    </svg>'''
-
-
 def logo_wordmark(size=46):
     """Texte « AMI » façon logo : A avec sommet cyan, MI clairs."""
     return (f'<div style="font-family:\'Oswald\',sans-serif; font-weight:700; font-size:{size}px; '
