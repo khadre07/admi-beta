@@ -91,13 +91,27 @@ class Database:
         tt = self.settings.setdefault("tempsTravail", {})
         return tt.setdefault(dept_id, default_schedule())
 
+    def _dept_collections(self):
+        return {"machines": self.machines, "arrets": self.arrets, "energie": self.energie,
+                "interventions": self.interventions, "planning": self.planning,
+                "pieces": self.pieces}
+
     def dept_usage(self, dept_id: str) -> int:
         """Nombre d'enregistrements rattachés à un département, tous types confondus."""
-        return sum(1
-                   for coll in (self.machines, self.arrets, self.energie,
-                                self.interventions, self.planning, self.pieces)
-                   for rec in coll
-                   if rec.get("departementId") == dept_id)
+        return sum(self.dept_usage_detail(dept_id).values())
+
+    def dept_usage_detail(self, dept_id: str) -> dict:
+        """Ce qui rattache encore des données à un département, type par type.
+
+        Sert à expliquer un refus de suppression : sans ce détail, l'utilisateur
+        ne sait pas où aller réaffecter ses enregistrements.
+        """
+        detail = {}
+        for nom, coll in self._dept_collections().items():
+            n = sum(1 for rec in coll if rec.get("departementId") == dept_id)
+            if n:
+                detail[nom] = n
+        return detail
 
     def objectifs(self) -> dict:
         return self.settings.setdefault("objectifs", {})

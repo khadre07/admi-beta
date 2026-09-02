@@ -150,6 +150,18 @@ _EN = {
     "Le nom et le code court sont requis.": "Name and short code are required.",
     "Département enregistré.": "Department saved.", "Département ajouté.": "Department added.",
     "Supprimer ce département": "Delete this department",
+    "Suppression impossible": "Cannot delete",
+    "utilisent encore ce département. Réaffectez-les à un autre "
+    "département avant de le supprimer.":
+        "still use this department. Reassign them to another department before deleting it.",
+    "Réinitialisation impossible": "Cannot reset",
+    "ces départements ajoutés sont encore utilisés :":
+        "these added departments are still in use:",
+    "Réaffectez leurs enregistrements avant de réinitialiser.":
+        "Reassign their records before resetting.",
+    "machine(s)": "machine(s)", "arrêt(s)": "downtime event(s)",
+    "relevé(s) d'énergie": "energy reading(s)", "intervention(s)": "intervention(s)",
+    "pièce(s)": "part(s)",
     "enregistrement(s) utilisent ce département. Si vous le supprimez, "
     "ils resteront en base mais n'afficheront plus de département reconnu.":
         "record(s) use this department. If you delete it they stay in the database but will no "

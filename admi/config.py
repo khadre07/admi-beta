@@ -56,6 +56,29 @@ def new_dept_id(nom: str, existants) -> str:
     return candidat
 
 
+# Couleurs proposées aux départements ajoutés après les huit d'usine. Ordre
+# fixe, jamais tiré au hasard : deux départements de la même couleur rendraient
+# les camemberts et les barres empilées illisibles.
+PALETTE_DEPTS = [d["couleur"] for d in DEPARTEMENTS_DEFAUT] + [
+    "#A855F7",  # violet
+    "#4ADE80",  # vert clair
+    "#F59E0B",  # ambre
+    "#E879F9",  # magenta
+    "#2DD4BF",  # turquoise
+    "#94A3B8",  # ardoise
+]
+
+
+def new_dept_color(couleurs_utilisees) -> str:
+    """Première couleur de la palette que personne n'utilise déjà."""
+    prises = {str(c).upper() for c in couleurs_utilisees}
+    for couleur in PALETTE_DEPTS:
+        if couleur.upper() not in prises:
+            return couleur
+    # Palette épuisée : on repart au début plutôt que d'inventer une teinte.
+    return PALETTE_DEPTS[len(prises) % len(PALETTE_DEPTS)]
+
+
 def dep(dept_id: str) -> dict:
     """Retourne le département, ou un objet de repli si l'id est inconnu."""
     return DEPT_BY_ID.get(

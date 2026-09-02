@@ -36,6 +36,25 @@ def test_set_departements_refreshes_lookups():
     assert "am" not in config.DEPT_BY_ID  # l'ancien département a disparu
 
 
+def test_a_new_department_gets_a_colour_nobody_else_uses():
+    """Deux départements de la même couleur rendent les graphiques illisibles."""
+    utilisees = [d["couleur"] for d in config.DEPARTEMENTS]
+    proposee = config.new_dept_color(utilisees)
+    assert proposee not in utilisees
+    assert config.new_dept_color(utilisees + [proposee]) not in utilisees + [proposee]
+
+
+def test_the_colour_proposed_is_stable():
+    """Même liste, même proposition : pas de couleur tirée au hasard."""
+    assert config.new_dept_color([]) == config.new_dept_color([])
+    assert config.new_dept_color([]) == config.DEPARTEMENTS_DEFAUT[0]["couleur"]
+
+
+def test_the_palette_never_runs_out():
+    fantaisie = [f"#{i:06X}" for i in range(400)]
+    assert config.new_dept_color(fantaisie).startswith("#")
+
+
 def test_dep_falls_back_on_an_unknown_id():
     d = config.dep("inconnu")
     assert d["nom"] == "inconnu" and d["court"] == "inconnu"
@@ -107,17 +126,73 @@ def test_admin_adds_a_department_that_survives_a_restart(app):
         "le nouveau département doit être proposé dans les filtres du tableau de bord"
 
 
-def test_deleting_a_used_department_warns_and_can_be_cancelled(app):
-    """Le garde-fou du HTML : on annonce combien d'enregistrements sont concernés."""
+def _boutons(app, key):
+    return [b for b in app.button if getattr(b, "key", None) == key]
+
+
+def test_the_form_proposes_a_free_colour_for_a_new_department(app):
+    app.sidebar.radio[0].set_value("Paramètres").run()
+    assert app.selectbox(key="dept_cible").value == "__new__"
+    proposee = app.color_picker[0].value
+    assert proposee.upper() not in {d["couleur"].upper() for d in config.DEPARTEMENTS}
+
+
+def test_deleting_a_used_department_is_refused(app):
+    """Supprimer un département utilisé rendrait ses enregistrements orphelins :
+    ils resteraient en base mais sortiraient de tous les graphiques."""
     app.sidebar.radio[0].set_value("Paramètres").run()
     app.selectbox(key="dept_cible").set_value("am").run()
 
-    app.button(key="dept_del").click().run()
-    assert any("Confirmez la suppression" in w.value for w in app.error)
-    assert any("utilisent ce département" in w.value for w in app.warning)
+    assert not _boutons(app, "dept_del"), "pas de bouton de suppression sur un département utilisé"
+    messages = " ".join(e.value for e in app.error)
+    assert "Suppression impossible" in messages
+    assert "machine" in messages, "le message dit ce qui bloque, type par type"
+    assert "am" in config.DEPT_BY_ID
 
-    app.button(key="dept_del_no").click().run()
-    assert "am" in config.DEPT_BY_ID, "annuler ne doit rien supprimer"
+
+def test_an_unused_department_can_be_deleted(app):
+    """Un département qu'aucun enregistrement n'utilise se supprime normalement."""
+    app.sidebar.radio[0].set_value("Paramètres").run()
+    next(t for t in app.text_input if t.label == "Nom complet").set_value("Menuiserie Métallique")
+    next(t for t in app.text_input if t.label == "Code court").set_value("MM")
+    next(b for b in app.button
+         if "Enregistrer le département" in (b.label or "")).click().run()
+    assert "menuiserie" in config.DEPT_BY_ID
+
+    app.selectbox(key="dept_cible").set_value("menuiserie").run()
+    _boutons(app, "dept_del")[0].click().run()
+    _boutons(app, "dept_del_ok")[0].click().run()
+    assert "menuiserie" not in config.DEPT_BY_ID
+    assert not app.exception, [str(e.value) for e in app.exception]
+
+
+def test_resetting_is_refused_while_a_custom_department_is_in_use(app):
+    """Réinitialiser supprime les départements ajoutés : même garde-fou."""
+    from admi.data import load_db, upsert_record
+
+    app.sidebar.radio[0].set_value("Paramètres").run()
+    next(t for t in app.text_input if t.label == "Nom complet").set_value("Menuiserie Métallique")
+    next(t for t in app.text_input if t.label == "Code court").set_value("MM")
+    next(b for b in app.button
+         if "Enregistrer le département" in (b.label or "")).click().run()
+
+    db = load_db()
+    upsert_record(db, "machines", {**db.machines[0], "departementId": "menuiserie"})
+    app.run()
+
+    _boutons(app, "dept_reset")[0].click().run()
+    assert not _boutons(app, "dept_reset_ok"), "pas de confirmation possible tant que c'est utilisé"
+    assert any("Menuiserie Métallique" in e.value for e in app.error)
+    assert "menuiserie" in config.DEPT_BY_ID
+
+
+def test_dept_usage_detail_says_what_blocks_the_deletion():
+    db = Database()
+    db.machines += [{"id": "m1", "departementId": "am"}, {"id": "m2", "departementId": "am"}]
+    db.arrets.append({"id": "a1", "departementId": "am"})
+    db.pieces.append({"id": "p1", "departementId": "chi"})
+    assert db.dept_usage_detail("am") == {"machines": 2, "arrets": 1}
+    assert db.dept_usage_detail("sl") == {}
 
 
 def test_dept_usage_counts_every_record_type():

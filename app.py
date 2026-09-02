@@ -882,6 +882,16 @@ def _save_departements(db):
     save_settings(db)
 
 
+_USAGE_LABELS = {"machines": "machine(s)", "arrets": "arrêt(s)", "energie": "relevé(s) d'énergie",
+                 "interventions": "intervention(s)", "planning": "action(s) planifiée(s)",
+                 "pieces": "pièce(s)"}
+
+
+def _usage_phrase(detail: dict) -> str:
+    """« 3 machines · 1 428 arrêts » — dire où sont les enregistrements qui bloquent."""
+    return " · ".join(f'{fmt_num(n)} {T(_USAGE_LABELS[cle])}' for cle, n in detail.items())
+
+
 def _settings_departements(db):
     """Ajout, modification et suppression des départements de l'usine."""
     st.write("")
@@ -915,7 +925,12 @@ def _settings_departements(db):
                             placeholder="Ex : Menuiserie Métallique")
         court = c2.text_input(T("Code court"), value=(courant["court"] if courant else ""),
                               max_chars=5, placeholder="MM")
-        couleur = c3.color_picker(T("Couleur"), value=(courant["couleur"] if courant else "#7C83FD"))
+        # Un nouveau département reçoit une couleur encore libre : deux
+        # départements de la même teinte rendraient les graphiques illisibles.
+        couleur = c3.color_picker(
+            T("Couleur"),
+            value=(courant["couleur"] if courant
+                   else config.new_dept_color([d["couleur"] for d in DEPARTEMENTS])))
         enregistrer = st.form_submit_button(T("Enregistrer le département"), type="primary")
 
     if enregistrer:
@@ -936,15 +951,18 @@ def _settings_departements(db):
             st.rerun()
 
     if courant:
-        usage = db.dept_usage(cible)
+        detail = db.dept_usage_detail(cible)
         st.write("")
-        if usage:
-            st.warning(
-                f'{usage} {T("enregistrement(s) utilisent ce département. Si vous le supprimez, "
-                             "ils resteront en base mais n\'afficheront plus de département reconnu.")}')
-        if st.button(T("Supprimer ce département"), key="dept_del"):
+        if detail:
+            # Supprimer laisserait ces enregistrements en base sans département
+            # reconnu : ils sortiraient de tous les graphiques sans prévenir.
+            st.error(
+                f'**{T("Suppression impossible")}** — {_usage_phrase(detail)} '
+                + T("utilisent encore ce département. Réaffectez-les à un autre "
+                    "département avant de le supprimer."))
+        elif st.button(T("Supprimer ce département"), key="dept_del"):
             st.session_state["dept_confirm"] = cible
-        if st.session_state.get("dept_confirm") == cible:
+        if not detail and st.session_state.get("dept_confirm") == cible:
             st.error(T("Confirmez la suppression :") + f' **{courant["nom"]}**')
             b = st.columns(2)
             if b[0].button(T("Oui, supprimer"), key="dept_del_ok", type="primary"):
@@ -960,6 +978,19 @@ def _settings_departements(db):
     if st.button(T("Réinitialiser les 8 départements d'usine"), key="dept_reset"):
         st.session_state["dept_reset_confirm"] = True
     if st.session_state.get("dept_reset_confirm"):
+        # Réinitialiser efface les départements ajoutés : même garde-fou que la
+        # suppression, sinon on perdrait leurs enregistrements des graphiques.
+        defauts = {d["id"] for d in config.DEPARTEMENTS_DEFAUT}
+        bloquants = [d for d in DEPARTEMENTS if d["id"] not in defauts and db.dept_usage(d["id"])]
+        if bloquants:
+            st.error(f'**{T("Réinitialisation impossible")}** — '
+                     + T("ces départements ajoutés sont encore utilisés :") + " "
+                     + ", ".join(f'{d["nom"]} ({db.dept_usage(d["id"])})' for d in bloquants)
+                     + ". " + T("Réaffectez leurs enregistrements avant de réinitialiser."))
+            if st.button(T("Annuler"), key="dept_reset_no"):
+                st.session_state["dept_reset_confirm"] = False
+                st.rerun()
+            return
         st.error(T("Vos ajouts et modifications de départements seront perdus. "
                    "Les machines, arrêts, énergie, interventions, planning et pièces restent intacts."))
         b = st.columns(2)
