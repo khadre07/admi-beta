@@ -153,6 +153,25 @@ def _dbmod():
     return _db
 
 
+def add_departement(db: Database, nom: str, court: str, couleur: str | None = None):
+    """Ajoute un département, l'active partout et le persiste.
+
+    Chemin unique, partagé par l'écran Paramètres et le raccourci du tableau de
+    bord. Retourne (True, département) ou (False, message d'erreur).
+    """
+    nom, court = str(nom or "").strip(), str(court or "").strip()
+    if not nom or not court:
+        return False, "Le nom et le code court sont requis."
+    couleurs = [d["couleur"] for d in config.DEPARTEMENTS]
+    nouveau = {"id": config.new_dept_id(nom, [d["id"] for d in config.DEPARTEMENTS]),
+               "nom": nom, "court": court.upper(),
+               "couleur": couleur or config.new_dept_color(couleurs)}
+    config.set_departements([*config.DEPARTEMENTS, nouveau])
+    db.settings["departements"] = [dict(d) for d in config.DEPARTEMENTS]
+    save_settings(db)
+    return True, nouveau
+
+
 def save_db(db: Database) -> None:
     """Écrit l'intégralité de l'état (utilisé pour l'import et l'amorçage démo)."""
     d = _dbmod()

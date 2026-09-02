@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from admi import config
+from admi import config, data
 from admi.data import Database
 
 
@@ -130,6 +130,27 @@ def _boutons(app, key):
     return [b for b in app.button if getattr(b, "key", None) == key]
 
 
+def test_the_dashboard_lets_an_admin_add_a_department(app):
+    """Le filtre du tableau de bord ne sert à rien si le département n'existe pas
+    encore : on doit pouvoir l'ajouter sans aller dans Paramètres."""
+    bouton = [b for b in app.button if "Nouveau département" in (b.label or "")]
+    assert bouton, "un raccourci d'ajout doit accompagner le filtre du tableau de bord"
+    bouton[0].click().run()
+    assert not app.exception, [str(e.value) for e in app.exception]
+
+
+def test_the_dashboard_shortcut_is_reserved_to_admins(app):
+    from admi import auth
+    auth.create_user("lecteur", "lecteur", "viewer")
+    next(b for b in app.button if "Se déconnecter" in (b.label or "")).click().run()
+    app.text_input[0].set_value("lecteur")
+    app.text_input[1].set_value("lecteur")
+    app.button[0].click().run()
+
+    assert not [b for b in app.button if "Nouveau département" in (b.label or "")], \
+        "un lecteur ne crée pas de département"
+
+
 def test_the_form_proposes_a_free_colour_for_a_new_department(app):
     app.sidebar.radio[0].set_value("Paramètres").run()
     assert app.selectbox(key="dept_cible").value == "__new__"
@@ -184,6 +205,33 @@ def test_resetting_is_refused_while_a_custom_department_is_in_use(app):
     assert not _boutons(app, "dept_reset_ok"), "pas de confirmation possible tant que c'est utilisé"
     assert any("Menuiserie Métallique" in e.value for e in app.error)
     assert "menuiserie" in config.DEPT_BY_ID
+
+
+def test_add_departement_creates_persists_and_picks_a_free_colour(tmp_path, monkeypatch):
+    """Un seul chemin d'ajout, partagé par Paramètres et le tableau de bord."""
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'ajout.db'}")
+    from admi import data, db as dbmod
+    monkeypatch.setattr(dbmod, "_engine", None)
+    monkeypatch.setattr(dbmod, "_tables", {})
+    monkeypatch.setattr(dbmod, "_meta", dbmod.MetaData())
+
+    base = data.load_db()
+    ok, nouveau = data.add_departement(base, "  Menuiserie Métallique ", "mm")
+    assert ok
+    assert nouveau["id"] == "menuiserie" and nouveau["court"] == "MM"
+    assert nouveau["couleur"] not in [d["couleur"] for d in config.DEPARTEMENTS_DEFAUT]
+    assert config.dep("menuiserie")["nom"] == "Menuiserie Métallique"
+
+    config.reset_departements()  # redémarrage à froid
+    data.load_db()
+    assert "menuiserie" in config.DEPT_BY_ID, "l'ajout doit être persisté"
+
+
+def test_add_departement_refuses_an_incomplete_form():
+    ok, msg = data.add_departement(Database(), "   ", "MM")
+    assert not ok and "requis" in msg
+    ok, msg = data.add_departement(Database(), "Menuiserie", " ")
+    assert not ok and "requis" in msg
 
 
 def test_dept_usage_detail_says_what_blocks_the_deletion():

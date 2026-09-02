@@ -179,13 +179,26 @@ def live_clock_html(lang: str = "fr") -> str:
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@600&family=Inter:wght@500&family=JetBrains+Mono:wght@700&display=swap');
 html, body {{ margin:0; background:transparent; }}
-.live-clock {{ text-align:right; line-height:1.35; white-space:nowrap;
-  font-family:'Inter', sans-serif; padding-top:6px; }}
-.lc-time {{ font-family:'JetBrains Mono', monospace; font-size:16px; font-weight:700;
-  color:{THEME['accent']}; letter-spacing:.03em; }}
-.lc-date {{ font-size:10.5px; color:{THEME['muted']}; text-transform:capitalize; }}
+/* Même carte que les indicateurs : panneau, bordure, liseré d'accent. */
+.live-clock {{ display:inline-flex; align-items:center; gap:10px; float:right;
+  background:{THEME['panel2']}; border:1px solid {THEME['border']};
+  border-left:3px solid {THEME['accent']}; border-radius:10px;
+  padding:8px 12px 8px 11px; font-family:'Inter', sans-serif;
+  line-height:1.3; white-space:nowrap; }}
+/* Le point qui bat : sans lui, rien ne dit que l'heure est vivante. */
+.lc-dot {{ width:7px; height:7px; border-radius:50%; background:{THEME['accent2']};
+  box-shadow:0 0 0 0 {THEME['accent2']}; animation:lc-pulse 2s infinite; flex:none; }}
+@keyframes lc-pulse {{
+  0%   {{ opacity:1;   transform:scale(1); }}
+  50%  {{ opacity:.35; transform:scale(.82); }}
+  100% {{ opacity:1;   transform:scale(1); }}
+}}
+.lc-time {{ font-family:'JetBrains Mono', monospace; font-size:17px; font-weight:700;
+  color:{THEME['accent']}; letter-spacing:.04em; font-variant-numeric:tabular-nums; }}
+.lc-date {{ font-size:10px; color:{THEME['muted']}; text-transform:capitalize;
+  letter-spacing:.02em; margin-top:1px; }}
 </style></head><body>
-<div id="liveClock" class="live-clock"></div>
+<div class="live-clock"><span class="lc-dot"></span><div id="liveClock"></div></div>
 <script>
 function updateLiveClock() {{
   var el = document.getElementById('liveClock');

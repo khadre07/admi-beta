@@ -46,6 +46,19 @@ def test_the_header_carries_the_clock(app):
     assert not app.exception, [str(e.value) for e in app.exception]
 
 
+def test_the_clock_sits_in_a_card_like_the_rest_of_the_app():
+    """Posée telle quelle, l'horloge flottait dans le vide en haut à droite."""
+    html = live_clock_html("fr")
+    assert THEME["panel2"] in html and THEME["border"] in html
+    assert "border-radius" in html
+
+
+def test_the_clock_says_it_is_live():
+    """Un point qui bat : sans lui, rien ne distingue l'horloge d'un horodatage figé."""
+    html = live_clock_html("fr")
+    assert "@keyframes" in html and "animation" in html
+
+
 def test_the_clock_wears_the_charter_colours():
     html = live_clock_html("fr")
     assert THEME["accent"] in html, "l'heure porte la couleur signature"

@@ -20,9 +20,9 @@ from admi import (alerts, auth, charts, config, i18n, kpis, license as lic,
 from admi.config import (DEPARTEMENTS, DOW, MOIS, OBJECTIF_LABELS,
                          OBJECTIF_SENS, OBJECTIF_UNITES, STATUTS_MACHINE, THEME,
                          TYPES_ARRET, TYPES_INTERV, TYPES_PLAN, dep)
-from admi.data import (DATA_FILE, delete_record, get_alert_config, load_db,
-                       save_alert_config, save_db, save_settings, uid,
-                       upsert_record)
+from admi.data import (DATA_FILE, add_departement, delete_record,
+                       get_alert_config, load_db, save_alert_config, save_db,
+                       save_settings, uid, upsert_record)
 
 
 def _machine_opts(db):
@@ -255,6 +255,13 @@ def view_dashboard(db):
         annee = st.selectbox(T("Année"), list(range(2020, 2027))[::-1], key="dash_annee")
     with c4:
         dept = dept_selectbox("Département", "dash_dept")
+        # Filtrer sur un département absent de la liste n'a pas de sens : on le
+        # crée ici plutôt que d'envoyer l'utilisateur dans Paramètres.
+        if is_admin() and st.button(T("＋ Nouveau département"), key="dash_new_dept",
+                                    width="stretch"):
+            st.session_state["dept_dialog"] = True
+    if st.session_state.get("dept_dialog"):
+        dept_dialog(db)
 
     k = kpis.compute_kpis(db, periode, annee, mois, dept)
     _bandeau_stock(db)
@@ -892,6 +899,30 @@ def _usage_phrase(detail: dict) -> str:
     return " · ".join(f'{fmt_num(n)} {T(_USAGE_LABELS[cle])}' for cle, n in detail.items())
 
 
+@st.dialog("Nouveau département")
+def dept_dialog(db):
+    """Création rapide depuis le tableau de bord — mêmes règles que Paramètres."""
+    nom = st.text_input(T("Nom complet"), placeholder="Ex : Menuiserie Métallique")
+    c1, c2 = st.columns(2)
+    court = c1.text_input(T("Code court"), max_chars=5, placeholder="MM")
+    couleur = c2.color_picker(
+        T("Couleur"), value=config.new_dept_color([d["couleur"] for d in DEPARTEMENTS]))
+    st.caption(T("Il sera immédiatement disponible dans tous les formulaires et "
+                 "prendra cette couleur dans tous les graphiques."))
+
+    b1, b2 = st.columns(2)
+    if b1.button(T("Enregistrer le département"), type="primary", key="dept_dlg_ok"):
+        ok, resultat = add_departement(db, nom, court, couleur)
+        if not ok:
+            st.error(T(resultat))
+        else:
+            st.session_state["dept_dialog"] = False
+            st.rerun()
+    if b2.button(T("Annuler"), key="dept_dlg_no"):
+        st.session_state["dept_dialog"] = False
+        st.rerun()
+
+
 def _settings_departements(db):
     """Ajout, modification et suppression des départements de l'usine."""
     st.write("")
@@ -943,10 +974,7 @@ def _settings_departements(db):
             st.success(T("Département enregistré."))
             st.rerun()
         else:
-            nouveau = {"id": config.new_dept_id(nom, ids), "nom": nom.strip(),
-                       "court": court.strip().upper(), "couleur": couleur}
-            config.set_departements([*DEPARTEMENTS, nouveau])
-            _save_departements(db)
+            add_departement(db, nom, court, couleur)
             st.success(T("Département ajouté."))
             st.rerun()
 
@@ -1858,7 +1886,7 @@ def main():
         st.markdown(f'<div style="color:{THEME["muted2"]}; font-size:12px; margin-top:-12px; '
                     f'margin-bottom:16px">{T(SUBTITLES[choice])}</div>', unsafe_allow_html=True)
     with horloge:
-        st.iframe(live_clock_html(_lang()), height=52)
+        st.iframe(live_clock_html(_lang()), height=62)
     st.session_state["_plot_n"] = 0   # clés de graphiques stables par run
     SECTIONS[choice](db)
 

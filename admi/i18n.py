@@ -150,6 +150,11 @@ _EN = {
     "Le nom et le code court sont requis.": "Name and short code are required.",
     "Département enregistré.": "Department saved.", "Département ajouté.": "Department added.",
     "Supprimer ce département": "Delete this department",
+    "Nouveau département": "New department",
+    "Il sera immédiatement disponible dans tous les formulaires et "
+    "prendra cette couleur dans tous les graphiques.":
+        "It becomes available in every form straight away and carries this colour "
+        "into every chart.",
     "Suppression impossible": "Cannot delete",
     "utilisent encore ce département. Réaffectez-les à un autre "
     "département avant de le supprimer.":
