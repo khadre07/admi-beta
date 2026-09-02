@@ -1,4 +1,6 @@
-streamlit>=1.40
+# >=1.61 : l'horloge de l'en-tête utilise st.iframe, absent des versions plus
+# anciennes (le déploiement cloud installe la version résolue depuis ce fichier).
+streamlit>=1.61
 plotly>=6.0
 pandas>=2.2
 openpyxl>=3.1
