@@ -123,6 +123,108 @@ _EN = {
     "Ajoutez des rapports d'intervention pour cette période.":
         "Add intervention reports for this period.",
     "Aucun arrêt sur ce filtre.": "No downtime for this filter.",
+    # Lisibilité des graphiques : cible, Pareto, top machines
+    "Cible": "Target", "cumulé": "cumulative", "occurrence(s)": "occurrence(s)",
+    "d'arrêt cumulé": "of cumulative downtime", "Non renseigné": "Not specified",
+    "Top 5 des machines les plus problématiques": "Top 5 most problematic machines",
+    "Top 5 des causes d'arrêt (Pareto)": "Top 5 downtime causes (Pareto)",
+    "Classées par nombre de pannes ; le temps d'arrêt cumulé apparaît au survol.":
+        "Ranked by number of breakdowns; cumulative downtime shows on hover.",
+    "Barres = occurrences ; le pourcentage cumulé est écrit sur chaque barre.":
+        "Bars = occurrences; the cumulative percentage is written on each bar.",
+    "Ajoutez des arrêts avec une cause renseignée pour voir les causes les plus fréquentes.":
+        "Add downtime events with a cause to see the most frequent causes.",
+    "Ce classement apparaîtra dès qu'un arrêt de type « Panne » sera saisi.":
+        "This ranking appears as soon as a downtime event of type “Breakdown” is recorded.",
+    # Départements (paramétrage)
+    "Départements de l'usine": "Plant departments",
+    "Un département ajouté ici devient immédiatement disponible dans tous les formulaires "
+    "(machines, arrêts, énergie, interventions, planning, pièces) et prend sa couleur dans "
+    "tous les graphiques.":
+        "A department added here becomes immediately available in every form (machines, "
+        "downtime, energy, interventions, schedule, parts) and carries its colour into every chart.",
+    "Nom": "Name", "Code": "Code", "Couleur": "Colour", "Enregistrements": "Records",
+    "Département à modifier": "Department to edit", "＋ Nouveau département": "＋ New department",
+    "Nom complet": "Full name", "Code court": "Short code",
+    "Enregistrer le département": "Save department",
+    "Le nom et le code court sont requis.": "Name and short code are required.",
+    "Département enregistré.": "Department saved.", "Département ajouté.": "Department added.",
+    "Supprimer ce département": "Delete this department",
+    "enregistrement(s) utilisent ce département. Si vous le supprimez, "
+    "ils resteront en base mais n'afficheront plus de département reconnu.":
+        "record(s) use this department. If you delete it they stay in the database but will no "
+        "longer show a recognised department.",
+    "Confirmez la suppression :": "Confirm deletion:", "Oui, supprimer": "Yes, delete",
+    "Réinitialiser les 8 départements d'usine": "Reset to the 8 factory departments",
+    "Vos ajouts et modifications de départements seront perdus. "
+    "Les machines, arrêts, énergie, interventions, planning et pièces restent intacts.":
+        "Your added and edited departments will be lost. Machines, downtime, energy, "
+        "interventions, schedule and parts are left untouched.",
+    "Oui, réinitialiser": "Yes, reset",
+    # Pièces de rechange
+    "Pièces de rechange": "Spare parts",
+    "Stock de pièces détachées, seuils d'alerte et mouvements":
+        "Spare parts stock, alert thresholds and movements",
+    "＋ Nouvelle pièce": "＋ New part", "↕ Mouvement de stock": "↕ Stock movement",
+    "Références en stock": "Parts in catalogue", "Valeur totale du stock": "Total stock value",
+    "Sous le seuil d'alerte": "Below alert threshold", "En rupture": "Out of stock",
+    "Afficher uniquement les alertes et ruptures": "Show only alerts and shortages",
+    "Catalogue des pièces": "Parts catalogue", "référence(s)": "part(s)",
+    "Aucune pièce ne correspond à ce filtre. Ajoutez une référence pour suivre son stock.":
+        "No part matches this filter. Add a part to start tracking its stock.",
+    "Historique des mouvements de stock": "Stock movement history",
+    "Les entrées, sorties et ajustements de stock apparaîtront ici.":
+        "Stock entries, withdrawals and adjustments will appear here.",
+    "Désignation": "Description", "Réf.": "Ref.", "Emplacement": "Location",
+    "Quantité": "Quantity", "Seuil": "Threshold", "Statut": "Status",
+    "Coût unit.": "Unit cost", "Valeur": "Value", "Motif": "Reason",
+    "Pièce": "Part", "Pièce supprimée": "Deleted part",
+    "OK": "OK", "Stock bas": "Low stock", "Rupture": "Out of stock",
+    "Référence (optionnel)": "Reference (optional)",
+    "Département associé": "Related department", "— Non spécifié —": "— Not specified —",
+    "Quantité en stock": "Quantity in stock", "Unité": "Unit",
+    "Seuil d'alerte": "Alert threshold", "Coût unitaire (FCFA)": "Unit cost (FCFA)",
+    "Fournisseur (optionnel)": "Supplier (optional)",
+    "La désignation est requise.": "A description is required.",
+    "Type de mouvement": "Movement type", "Entrée": "Entry", "Sortie": "Withdrawal",
+    "Ajustement": "Adjustment", "stock actuel": "current stock",
+    "Pour un ajustement, indiquez la nouvelle quantité totale.":
+        "For an adjustment, enter the new total quantity.",
+    "Quantité entrée ou sortie du magasin.": "Quantity entering or leaving the store.",
+    "Ajoutez d'abord une pièce au catalogue.": "Add a part to the catalogue first.",
+    "Fermer": "Close",
+    "pièce(s) de rechange sous le seuil d'alerte": "spare part(s) below the alert threshold",
+    "Voir le stock →": "View stock →", "et": "and", "autre(s)": "other(s)",
+    "Planifiez des actions préventives pour suivre leur réalisation.":
+        "Schedule preventive actions to track their completion.",
+    # Tableau de bord — sections, jauges et objectifs
+    "Performance de la maintenance": "Maintenance performance",
+    "Énergie & puissance": "Energy & power",
+    "Tendance pluriannuelle": "Multi-year trend",
+    "Depuis 2020": "Since 2020",
+    "Vue annuelle calculée sur toutes les données saisies ou importées depuis 2020, "
+    "pour le département sélectionné plus haut.":
+        "Yearly view computed from all data entered or imported since 2020, "
+        "for the department selected above.",
+    "Réalisation du préventif": "Preventive completion",
+    "Réalisées": "Completed", "Réalisé": "Completed", "Arrêt": "Downtime",
+    "En attente / retard": "Pending / overdue",
+    "arrêt(s) sur la période": "downtime event(s) in the period",
+    "action(s) planifiée(s)": "scheduled action(s)", "panne(s)": "breakdown(s)",
+    "Temps moyen de réparation": "Mean time to repair",
+    "Objectif": "Target", "Cible": "Target", "Indicateur": "Indicator",
+    "Objectif non défini dans Paramètres": "No target set in Settings",
+    "Objectifs de performance": "Performance targets",
+    "Taux préventif": "Preventive rate",
+    "Chaque objectif s'affiche sous son indicateur au tableau de bord, en vert s'il est tenu "
+    "et en rouge sinon. Laissez un champ vide pour ne pas fixer de cible.":
+        "Each target appears under its indicator on the dashboard, green when met and red "
+        "otherwise. Leave a field empty to set no target.",
+    "aucune": "none",
+    "Valeur non numérique pour :": "Not a number for:",
+    "Enregistrer les objectifs": "Save targets",
+    "Objectifs enregistrés — ils apparaissent sous les indicateurs du tableau de bord.":
+        "Targets saved — they now appear under the dashboard indicators.",
     # Rapports
     "Rapport de maintenance industrielle": "Industrial maintenance report",
     "AMI — Rapport de maintenance industrielle": "AMI — Industrial maintenance report",
@@ -269,3 +371,13 @@ def type_label(value, lang=None):
 def month(index, lang=None):
     lang = lang or _CURRENT
     return (MOIS_EN if lang == "en" else _MOIS_FR)[index]
+
+
+def fmt_num(n, dec: int = 0) -> str:
+    """Nombre au format français : « 12 345,7 ».
+
+    Source unique pour les tableaux, les graphiques et les rapports — le même
+    format que `separators` du template Plotly (voir `theme.register_template`).
+    """
+    s = f"{float(n or 0):,.{dec}f}"
+    return s.replace(",", "X").replace(".", ",").replace("X", " ")

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-from .config import DEPARTEMENTS
+from .config import DEPARTEMENTS, OBJECTIF_SENS
 
 TREND_START_YEAR = 2020
 
@@ -103,11 +103,33 @@ def filter_energie(db, periode, annee, mois, dept="all"):
     return out
 
 
+def filter_planning(db, start, end, dept="all"):
+    out = []
+    for p in db.planning:
+        dd = _parse(p["date"])
+        if dd < start or dd >= end:
+            continue
+        if dept != "all" and p["departementId"] != dept:
+            continue
+        out.append(p)
+    return out
+
+
+def objectif_atteint(metric: str, value, target):
+    """L'objectif est-il tenu ? None si la valeur ou la cible n'est pas définie."""
+    if value is None or target is None:
+        return None
+    if OBJECTIF_SENS.get(metric) == "max":
+        return float(value) <= float(target)
+    return float(value) >= float(target)
+
+
 def compute_kpis(db, periode: str, annee: int, mois: int, dept: str) -> dict:
     start, end = period_bounds(periode, annee, mois)
     arrets = filter_arrets(db, start, end, dept)
     intervs = filter_interventions(db, start, end, dept)
     energie = filter_energie(db, periode, annee, mois, dept)
+    planning = filter_planning(db, start, end, dept)
 
     heures_ouverture = 0.0
     for d_id in _scope_depts(dept):
@@ -129,6 +151,11 @@ def compute_kpis(db, periode: str, annee: int, mois: int, dept: str) -> dict:
     cout_energie = sum(float(e.get("montant") or 0) for e in energie)
     puissance_totale = sum(float(m.get("puissanceKW") or 0) for m in db.machines)
 
+    # Taux de réalisation du préventif : les actions annulées ne comptent pas.
+    planning_dus = [p for p in planning if p.get("statut") != "Annulé"]
+    planning_realises = sum(1 for p in planning_dus if p.get("statut") == "Réalisé")
+    taux_preventif = (planning_realises / len(planning_dus) * 100) if planning_dus else None
+
     return {
         "tempsArretH": round(temps_arret, 6),
         "nbPannes": nb_pannes,
@@ -141,6 +168,9 @@ def compute_kpis(db, periode: str, annee: int, mois: int, dept: str) -> dict:
         "coutEnergie": cout_energie,
         "heuresOuverture": heures_ouverture,
         "puissanceInstallee": puissance_totale,
+        "planningDus": len(planning_dus),
+        "planningRealises": planning_realises,
+        "tauxRealisationPreventif": taux_preventif,
     }
 
 

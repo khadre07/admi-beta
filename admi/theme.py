@@ -52,6 +52,31 @@ section[data-testid="stSidebar"] * {{ color: {THEME['text']}; }}
 .kpi-card .value .unit {{ font-size:13px; color:{THEME['muted']}; font-weight:400; }}
 .kpi-card .delta {{ font-size:11px; color:{THEME['muted2']}; margin-top:6px; }}
 
+/* Bandeau de section du tableau de bord */
+.dash-section {{ display:flex; align-items:center; gap:12px; margin: 18px 0 10px 0; }}
+.dash-section .label {{ font-family:'Oswald'; font-size:13px; letter-spacing:.12em;
+  text-transform:uppercase; color:{THEME['muted']}; white-space:nowrap; }}
+.dash-section .line {{ flex:1; height:1px;
+  background:linear-gradient(90deg, {THEME['border_light']}, transparent); }}
+
+/* Bandeau d'alerte stock */
+.stock-alert {{ display:flex; align-items:center; gap:12px; margin-bottom:6px;
+  padding:12px 16px; border-radius:12px;
+  border:1px solid rgba(242,169,59,.4);
+  background:linear-gradient(180deg, rgba(242,169,59,.10), {THEME['panel2']}); }}
+.stock-alert .ico {{ font-size:20px; }}
+.stock-alert b {{ color:{THEME['text']}; }}
+.stock-alert .hint {{ color:{THEME['muted']}; font-size:12px; margin-top:2px; }}
+
+/* Légende sous les jauges */
+.gauge-foot {{ display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin-top:-4px; }}
+.gauge-foot .chip {{ font-size:11px; font-weight:600; padding:3px 9px; border-radius:20px;
+  background:{THEME['panel2']}; border:1px solid {THEME['border']}; }}
+.gauge-foot .chip.good {{ color:{THEME['success']}; }}
+.gauge-foot .chip.bad {{ color:{THEME['danger']}; }}
+.gauge-foot .chip.warn {{ color:{THEME['warn']}; }}
+.gauge-note {{ text-align:center; color:{THEME['muted2']}; font-size:12px; margin-top:8px; }}
+
 /* Titres de section */
 .section-title {{ font-family:'Oswald'; font-size:15px; letter-spacing:.04em;
   text-transform:uppercase; color:{THEME['text']}; margin: 6px 0 6px 0;
@@ -97,6 +122,9 @@ def register_template() -> str:
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Inter, sans-serif", size=12, color=THEME["muted"]),
+        # Nombres au format français : virgule décimale, espace pour les milliers
+        # (sans quoi Plotly écrit « 1,234.5 » dans une application française).
+        separators=", ",
         title=dict(font=dict(family="Oswald, sans-serif", color=THEME["text"], size=15)),
         legend=dict(font=dict(color=THEME["muted"], size=11), bgcolor="rgba(0,0,0,0)"),
         margin=dict(l=56, r=18, t=34, b=44),
@@ -132,3 +160,43 @@ def style_fig(fig, height: int = 280, **layout):
 # Enregistre le template dès l'import, pour que les graphiques (et les rapports
 # générés hors application Streamlit) trouvent toujours le template « admi ».
 register_template()
+
+
+# ---------------------------------------------------------------------------
+# Horloge live de l'en-tête (reprise du HTML d'origine : heure + date longue)
+# ---------------------------------------------------------------------------
+_CLOCK_LOCALES = {"fr": "fr-FR", "en": "en-GB"}
+
+
+def live_clock_html(lang: str = "fr") -> str:
+    """Bloc autonome pour `components.html` : il se rafraîchit dans le navigateur.
+
+    Le minuteur vit dans la page — aucun rerun Streamlit, donc aucun recalcul des
+    graphiques ni perte des filtres en cours.
+    """
+    locale = _CLOCK_LOCALES.get(lang, _CLOCK_LOCALES["fr"])
+    return f"""<!doctype html><html><head><meta charset="utf-8">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@600&family=Inter:wght@500&family=JetBrains+Mono:wght@700&display=swap');
+html, body {{ margin:0; background:transparent; }}
+.live-clock {{ text-align:right; line-height:1.35; white-space:nowrap;
+  font-family:'Inter', sans-serif; padding-top:6px; }}
+.lc-time {{ font-family:'JetBrains Mono', monospace; font-size:16px; font-weight:700;
+  color:{THEME['accent']}; letter-spacing:.03em; }}
+.lc-date {{ font-size:10.5px; color:{THEME['muted']}; text-transform:capitalize; }}
+</style></head><body>
+<div id="liveClock" class="live-clock"></div>
+<script>
+function updateLiveClock() {{
+  var el = document.getElementById('liveClock');
+  if (!el) return;
+  var now = new Date();
+  var dateStr = now.toLocaleDateString('{locale}',
+    {{weekday:'long', day:'numeric', month:'long', year:'numeric'}});
+  var timeStr = now.toLocaleTimeString('{locale}');
+  el.innerHTML = '<div class="lc-time">' + timeStr + '</div>'
+               + '<div class="lc-date">' + dateStr + '</div>';
+}}
+updateLiveClock();
+setInterval(updateLiveClock, 1000);
+</script></body></html>"""

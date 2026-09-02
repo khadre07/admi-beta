@@ -15,8 +15,10 @@ import streamlit as st
 import streamlit.components.v1 as components
 from streamlit_calendar import calendar as st_calendar
 
-from admi import alerts, auth, charts, i18n, kpis, license as lic, report, update
-from admi.config import (DEPARTEMENTS, DOW, MOIS, STATUTS_MACHINE, THEME,
+from admi import (alerts, auth, charts, config, i18n, kpis, license as lic,
+                  report, stock, update)
+from admi.config import (DEPARTEMENTS, DOW, MOIS, OBJECTIF_LABELS,
+                         OBJECTIF_SENS, OBJECTIF_UNITES, STATUTS_MACHINE, THEME,
                          TYPES_ARRET, TYPES_INTERV, TYPES_PLAN, dep)
 from admi.data import (DATA_FILE, delete_record, get_alert_config, load_db,
                        save_alert_config, save_db, save_settings, uid,
@@ -72,7 +74,7 @@ STATUTS_PLAN = ["Planifié", "Réalisé", "En retard", "Annulé"]
 STATUT_EMOJI = {"Planifié": "🕓", "Réalisé": "✓", "En retard": "⚠", "Annulé": "✕"}
 from admi.io_excel import (LABELS, TYPES, apply_import, export_bytes,
                            parse_import, template_bytes)
-from admi.theme import CSS, register_template
+from admi.theme import CSS, live_clock_html, register_template
 
 st.set_page_config(page_title="AMI — Analyse de Maintenance Industrielle",
                    page_icon="🏭", layout="wide", initial_sidebar_state="expanded")
@@ -140,8 +142,7 @@ def _maybe_alert(subject, message):
 
 
 def fmt_num(n, dec=0):
-    s = f"{float(n or 0):,.{dec}f}"
-    return s.replace(",", "X").replace(".", ",").replace("X", " ")
+    return i18n.fmt_num(n, dec)
 
 
 def fmt_money(n):
@@ -162,6 +163,38 @@ def kpi_card(label, value, unit="", delta="", color=None, value_size=30):
         f'<div class="label">{T(label)}</div>'
         f'<div class="value" style="font-size:{value_size}px">{value}{unit_html}</div>'
         f'{delta_html}</div>', unsafe_allow_html=True)
+
+
+def dash_section(icon, label):
+    """Bandeau de section du tableau de bord (🛠️ Performance, ⚡ Énergie…)."""
+    st.markdown(
+        f'<div class="dash-section"><span class="label">{icon} {T(label)}</span>'
+        f'<div class="line"></div></div>', unsafe_allow_html=True)
+
+
+def objectif_delta(db, metric, value, prefixe=""):
+    """Rappel de l'objectif sous un indicateur : « Objectif ≥ 90 % ✓ ».
+
+    Renvoie une chaîne vide si aucune cible n'est fixée dans Paramètres.
+    """
+    cible = db.objectif(metric)
+    atteint = kpis.objectif_atteint(metric, value, cible)
+    if atteint is None:
+        return ""
+    signe = "≤" if OBJECTIF_SENS[metric] == "max" else "≥"
+    unite = OBJECTIF_UNITES[metric]
+    dec = 1 if metric == "mttr" else 0
+    couleur = THEME["success"] if atteint else THEME["danger"]
+    return (f'{prefixe}<span style="color:{couleur}; font-weight:600">'
+            f'{T("Objectif")} {signe} {fmt_num(cible, dec)} {unite} {"✓" if atteint else "✗"}</span>')
+
+
+def objectif_couleur(db, metric, value, defaut):
+    """Couleur du chiffre d'une jauge : verte si l'objectif est tenu, rouge sinon."""
+    atteint = kpis.objectif_atteint(metric, value, db.objectif(metric))
+    if atteint is None:
+        return defaut
+    return THEME["success"] if atteint else THEME["danger"]
 
 
 def dept_selectbox(label, key, include_all=True):
@@ -190,6 +223,25 @@ def _month_fmt(m):
     return _months()[MOIS.index(m)]
 
 
+def _bandeau_stock(db):
+    """Alerte en tête du tableau de bord quand des pièces passent sous leur seuil."""
+    alerte = stock.pieces_en_alerte(db.pieces)
+    if not alerte:
+        return
+    noms = ", ".join(p["designation"] for p in alerte[:4])
+    if len(alerte) > 4:
+        noms += f' {T("et")} {len(alerte) - 4} {T("autre(s)")}'
+    st.markdown(
+        f'<div class="stock-alert"><div class="ico">⚠️</div><div>'
+        f'<b>{len(alerte)} {T("pièce(s) de rechange sous le seuil d\'alerte")}</b>'
+        f'<div class="hint">{noms}</div></div></div>', unsafe_allow_html=True)
+    if st.button(T("Voir le stock →"), key="dash_goto_stock"):
+        # On mémorise la destination : le radio de navigation ne peut pas être
+        # modifié une fois instancié, la sidebar l'applique au début du run suivant.
+        st.session_state["_goto"] = "Pièces de rechange"
+        st.rerun()
+
+
 def view_dashboard(db):
     c1, c2, c3, c4 = st.columns([1, 1, 1, 1.4])
     with c1:
@@ -205,39 +257,56 @@ def view_dashboard(db):
         dept = dept_selectbox("Département", "dash_dept")
 
     k = kpis.compute_kpis(db, periode, annee, mois, dept)
+    _bandeau_stock(db)
 
-    # -- Jauge de disponibilité + MTBF / MTTR / coût --
-    left, right = st.columns([1.1, 1])
+    # -- 🛠️ Performance de la maintenance --------------------------------------
+    dash_section("🛠️", "Performance de la maintenance")
+    left, mid, right = st.columns([1, 1, 1])
     with left:
         section_title("Disponibilité")
-        plot(charts.gauge_disponibilite(k["disponibilite"]))
+        plot(charts.gauge_disponibilite(
+            k["disponibilite"],
+            couleur=objectif_couleur(db, "disponibilite", k["disponibilite"], THEME["success"]),
+            cible=db.objectif("disponibilite")))
+        dispo_h = k["heuresOuverture"] - k["tempsArretH"]
         st.markdown(
-            f'<div style="text-align:center; color:{THEME["muted2"]}; font-size:12px">'
-            f'{k["nbArrets"]} arrêt(s) — {fmt_num(k["tempsArretH"],1)} h d\'arrêt sur la période</div>',
+            f'<div class="gauge-foot">'
+            f'<span class="chip good">● {T("Disponible")} — {fmt_num(dispo_h, 1)} h</span>'
+            f'<span class="chip bad">● {T("Arrêt")} — {fmt_num(k["tempsArretH"], 1)} h</span></div>'
+            f'<div class="gauge-note">{k["nbArrets"]} {T("arrêt(s) sur la période")}'
+            f'{objectif_delta(db, "disponibilite", k["disponibilite"], " · ")}</div>',
+            unsafe_allow_html=True)
+    with mid:
+        section_title("Réalisation du préventif")
+        taux = k["tauxRealisationPreventif"]
+        plot(charts.gauge_taux_preventif(
+            taux, couleur=objectif_couleur(db, "tauxPreventif", taux, THEME["success"]),
+            cible=db.objectif("tauxPreventif")))
+        en_attente = max(0, k["planningDus"] - k["planningRealises"])
+        st.markdown(
+            f'<div class="gauge-foot">'
+            f'<span class="chip good">● {T("Réalisées")} — {k["planningRealises"]}</span>'
+            f'<span class="chip warn">● {T("En attente / retard")} — {en_attente}</span></div>'
+            f'<div class="gauge-note">{k["planningDus"]} {T("action(s) planifiée(s)")}'
+            f'{objectif_delta(db, "tauxPreventif", taux, " · ")}</div>',
             unsafe_allow_html=True)
     with right:
         kpi_card("MTBF", fmt_num(k["mtbf"], 1) if k["mtbf"] is not None else "—",
                  "heures" if k["mtbf"] is not None else "",
-                 f'Temps moyen entre pannes ({k["nbPannes"]} panne(s))', THEME["accent2"])
+                 f'{k["nbPannes"]} {T("panne(s)")}'
+                 + objectif_delta(db, "mtbf", k["mtbf"], " · "), THEME["accent2"])
         st.write("")
         kpi_card("MTTR", fmt_num(k["mttr"], 1) if k["mttr"] is not None else "—",
                  "heures" if k["mttr"] is not None else "",
-                 "Temps moyen de réparation", THEME["warn"])
+                 T("Temps moyen de réparation")
+                 + objectif_delta(db, "mttr", k["mttr"], " · "), THEME["warn"])
+        st.write("")
+        kpi_card("Temps d'arrêt cumulé", fmt_num(k["tempsArretH"], 1), "heures",
+                 objectif_delta(db, "tempsArret", k["tempsArretH"])
+                 or T("Objectif non défini dans Paramètres"), "#94A3B8")
         st.write("")
         kpi_card("Coût maintenance", fmt_money(k["coutMaint"]), "",
                  "Pièces + main d'œuvre, période sélectionnée", THEME["success"], value_size=22)
-
-    st.write("")
-    # -- 4 KPI --
-    g = st.columns(4)
-    with g[0]:
-        kpi_card("Temps d'arrêt cumulé", fmt_num(k["tempsArretH"], 1), "heures", color=THEME["accent2"])
-    with g[1]:
-        kpi_card("Énergie consommée", fmt_num(k["kwh"], 0), "kWh", color=THEME["accent2"])
-    with g[2]:
-        kpi_card("Coût énergie", fmt_money(k["coutEnergie"]), "", color=THEME["accent"], value_size=22)
-    with g[3]:
-        kpi_card("Puissance installée", fmt_num(k["puissanceInstallee"], 0), "kW", color="#94A3B8")
 
     st.write("")
     start, end = kpis.period_bounds(periode, annee, mois)
@@ -253,6 +322,21 @@ def view_dashboard(db):
         section_title("Répartition du coût de maintenance")
         plot(charts.donut_cout_by_dept(kpis.cout_by_dept(intervs)))
 
+    section_title("Interventions préventif / correctif par département")
+    plot(charts.grouped_interv_prevcorr(kpis.interv_prev_corr_by_dept(intervs)))
+
+    # -- ⚡ Énergie & puissance --------------------------------------------------
+    st.write("")
+    dash_section("⚡", "Énergie & puissance")
+    g = st.columns(3)
+    with g[0]:
+        kpi_card("Énergie consommée", fmt_num(k["kwh"], 0), "kWh", color=THEME["accent2"])
+    with g[1]:
+        kpi_card("Coût énergie", fmt_money(k["coutEnergie"]), "", color=THEME["accent"], value_size=22)
+    with g[2]:
+        kpi_card("Puissance installée", fmt_num(k["puissanceInstallee"], 0), "kW", color="#94A3B8")
+
+    st.write("")
     r2a, r2b = st.columns(2)
     with r2a:
         section_title("Consommation énergétique par département (kWh)")
@@ -263,15 +347,12 @@ def view_dashboard(db):
 
     energie_annee = [e for e in db.energie
                      if e["annee"] == annee and (dept == "all" or e["departementId"] == dept)]
-    r3a, r3b = st.columns(2)
-    with r3a:
-        section_title(f"Consommation énergétique mensuelle — {annee}")
-        plot(charts.stacked_energie_mensuelle(energie_annee, dept))
-    with r3b:
-        section_title("Interventions préventif / correctif par département")
-        plot(charts.grouped_interv_prevcorr(kpis.interv_prev_corr_by_dept(intervs)))
+    section_title(f"Consommation énergétique mensuelle — {annee}")
+    plot(charts.stacked_energie_mensuelle(energie_annee, dept))
 
+    # -- 📈 Tendance pluriannuelle ----------------------------------------------
     st.write("")
+    dash_section("📈", "Tendance pluriannuelle")
     tcol1, tcol2 = st.columns([3, 1])
     with tcol2:
         metric_label = st.selectbox("Métrique de tendance",
@@ -281,7 +362,11 @@ def view_dashboard(db):
     metric_map = {"Temps d'arrêt (h)": "tempsArretH", "Coût maintenance (FCFA)": "coutMaint",
                   "Consommation énergie (kWh)": "kwh", "Disponibilité (%)": "disponibilite"}
     with tcol1:
-        section_title("Tendance pluriannuelle (depuis 2020)")
+        section_title("Depuis 2020")
+        st.markdown(
+            f'<div style="color:{THEME["muted2"]}; font-size:12px; margin-bottom:6px">'
+            f'{T("Vue annuelle calculée sur toutes les données saisies ou importées depuis 2020, "
+                 "pour le département sélectionné plus haut.")}</div>', unsafe_allow_html=True)
     plot(charts.line_trend(kpis.yearly_trend(db, dept), metric_map[metric_label]))
 
 
@@ -308,6 +393,94 @@ def view_machines(db):
 
 
 # ---------------------------------------------------------------------------
+# SECTION : Pièces de rechange
+# ---------------------------------------------------------------------------
+_STATUT_PIECE = {"ok": ("✓", "OK", "success"),
+                 "alerte": ("⚠", "Stock bas", "warn"),
+                 "rupture": ("✕", "Rupture", "danger")}
+
+
+def _piece_label(p):
+    court = dep(p["departementId"])["court"] if p.get("departementId") else "—"
+    return f'{p["designation"]} ({court})'
+
+
+def view_pieces(db):
+    _crud_controls(db, "piece", "＋ Nouvelle pièce", sorted(db.pieces, key=lambda p: p["designation"]),
+                   _piece_label)
+    if can_edit() and db.pieces:
+        if st.button(T("↕ Mouvement de stock"), key="piece_mvt_btn"):
+            st.session_state["piece_mvt_target"] = ("new", None)
+
+    t = stock.totaux(db.pieces)
+    g = st.columns(4)
+    with g[0]:
+        kpi_card("Références en stock", fmt_num(t["references"]), color=THEME["accent2"])
+    with g[1]:
+        kpi_card("Valeur totale du stock", fmt_money(t["valeur"]), color=THEME["success"], value_size=22)
+    with g[2]:
+        kpi_card("Sous le seuil d'alerte", fmt_num(t["alerte"]),
+                 color=THEME["warn"] if t["alerte"] else THEME["success"])
+    with g[3]:
+        kpi_card("En rupture", fmt_num(t["rupture"]),
+                 color=THEME["danger"] if t["rupture"] else THEME["success"])
+
+    st.write("")
+    f1, f2 = st.columns([1, 1])
+    with f1:
+        dept = dept_selectbox("Filtrer par département", "piece_dept")
+    with f2:
+        st.write("")
+        alertes_only = st.checkbox(T("Afficher uniquement les alertes et ruptures"), key="piece_alerte_only")
+
+    liste = [p for p in db.pieces
+             if (dept == "all" or p.get("departementId") == dept)
+             and not (alertes_only and stock.piece_statut(p) == "ok")]
+    liste.sort(key=lambda p: p["designation"])
+
+    section_title("Catalogue des pièces",
+                  f'<span style="color:{THEME["muted"]}; font-family:JetBrains Mono; font-size:12px">'
+                  f'{len(liste)} {T("référence(s)")}</span>')
+    if not liste:
+        st.info(T("Aucune pièce ne correspond à ce filtre. Ajoutez une référence pour suivre son stock."))
+    else:
+        rows = []
+        for p in liste:
+            icone, libelle, _ = _STATUT_PIECE[stock.piece_statut(p)]
+            rows.append({
+                T("Désignation"): p["designation"],
+                T("Réf."): p.get("reference", "") or "—",
+                T("Dépt."): dep(p["departementId"])["court"] if p.get("departementId") else "—",
+                T("Emplacement"): p.get("emplacement", "") or "—",
+                T("Quantité"): f'{fmt_num(p.get("quantite", 0))} {p.get("unite", "")}'.strip(),
+                T("Seuil"): fmt_num(p.get("seuilAlerte", 0)),
+                T("Statut"): f"{icone} {T(libelle)}",
+                T("Coût unit."): fmt_money(p.get("coutUnitaire", 0)),
+                T("Valeur"): fmt_money(stock.piece_valeur(p)),
+            })
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+
+    section_title("Historique des mouvements de stock")
+    if not db.mouvements:
+        st.info(T("Les entrées, sorties et ajustements de stock apparaîtront ici."))
+    else:
+        noms = {p["id"]: p["designation"] for p in db.pieces}
+        recents = sorted(db.mouvements, key=lambda m: m.get("date", ""), reverse=True)[:50]
+        signe = {"Entrée": "+", "Sortie": "−", "Ajustement": "±"}
+        rows = [{T("Date"): m.get("date", ""),
+                 T("Pièce"): noms.get(m["pieceId"], T("Pièce supprimée")),
+                 T("Type"): TT(m["type"]),
+                 T("Quantité"): f'{signe.get(m["type"], "")}{fmt_num(abs(float(m.get("quantite") or 0)))}',
+                 T("Motif"): m.get("motif", "") or "—"} for m in recents]
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+
+    if st.session_state.get("piece_target"):
+        piece_dialog(db, st.session_state.piece_target)
+    if st.session_state.get("piece_mvt_target"):
+        mouvement_dialog(db, st.session_state.piece_mvt_target)
+
+
+# ---------------------------------------------------------------------------
 # SECTION : Temps d'arrêt
 # ---------------------------------------------------------------------------
 def view_arrets(db):
@@ -324,6 +497,18 @@ def view_arrets(db):
     with c2:
         section_title("Répartition des arrêts par type (h)")
         plot(charts.bar_arrets_by_type(arrets, height=200))
+
+    g1, g2 = st.columns(2)
+    with g1:
+        section_title("Top 5 des machines les plus problématiques")
+        st.caption(T("Classées par nombre de pannes ; le temps d'arrêt cumulé "
+                     "apparaît au survol."))
+        plot(charts.bar_top_machines(arrets, db.machines, height=280))
+    with g2:
+        section_title("Top 5 des causes d'arrêt (Pareto)")
+        st.caption(T("Barres = occurrences ; le pourcentage cumulé est écrit "
+                     "sur chaque barre."))
+        plot(charts.pareto_causes(arrets, height=280))
 
     section_title("Journal des arrêts")
     rows = [{T("Machine"): db.machine_name(a["machineId"]), T("Dépt."): dep(a["departementId"])["court"],
@@ -658,6 +843,8 @@ def view_settings(db):
                 for d in DEPARTEMENTS]
         st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
         st.info("Modification réservée aux administrateurs.")
+        _settings_objectifs(db)
+        _settings_departements(db)
         return
 
     with st.form("settings_form"):
@@ -684,6 +871,159 @@ def view_settings(db):
                 s["jours"] = list(days)
             save_settings(db)
             st.success("Horaires enregistrés — la disponibilité, le MTBF et le MTTR en tiennent compte.")
+
+    _settings_objectifs(db)
+    _settings_departements(db)
+
+
+def _save_departements(db):
+    """Persiste la liste courante et la garde synchronisée avec config."""
+    db.settings["departements"] = [dict(d) for d in DEPARTEMENTS]
+    save_settings(db)
+
+
+def _settings_departements(db):
+    """Ajout, modification et suppression des départements de l'usine."""
+    st.write("")
+    section_title("Départements de l'usine")
+    st.markdown(
+        f'<div style="color:{THEME["muted2"]}; font-size:12.5px; line-height:1.6; margin-bottom:12px">'
+        + T("Un département ajouté ici devient immédiatement disponible dans tous les formulaires "
+            "(machines, arrêts, énergie, interventions, planning, pièces) et prend sa couleur dans "
+            "tous les graphiques.")
+        + "</div>", unsafe_allow_html=True)
+
+    rows = [{T("Nom"): TD(d["id"], d["nom"]), T("Code"): d["court"],
+             T("Couleur"): d["couleur"], T("Enregistrements"): db.dept_usage(d["id"])}
+            for d in DEPARTEMENTS]
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+
+    if not is_admin():
+        st.info("Modification réservée aux administrateurs.")
+        return
+
+    ids = [d["id"] for d in DEPARTEMENTS]
+    cible = st.selectbox(T("Département à modifier"), ["__new__"] + ids,
+                         format_func=lambda i: T("＋ Nouveau département") if i == "__new__"
+                         else f'{dep(i)["nom"]} ({dep(i)["court"]})',
+                         key="dept_cible")
+    courant = dep(cible) if cible != "__new__" else None
+
+    with st.form("dept_form"):
+        c1, c2, c3 = st.columns([2.4, 1, 1])
+        nom = c1.text_input(T("Nom complet"), value=(courant["nom"] if courant else ""),
+                            placeholder="Ex : Menuiserie Métallique")
+        court = c2.text_input(T("Code court"), value=(courant["court"] if courant else ""),
+                              max_chars=5, placeholder="MM")
+        couleur = c3.color_picker(T("Couleur"), value=(courant["couleur"] if courant else "#7C83FD"))
+        enregistrer = st.form_submit_button(T("Enregistrer le département"), type="primary")
+
+    if enregistrer:
+        if not nom.strip() or not court.strip():
+            st.error(T("Le nom et le code court sont requis."))
+        elif courant:
+            courant.update({"nom": nom.strip(), "court": court.strip().upper(), "couleur": couleur})
+            config.set_departements(DEPARTEMENTS)
+            _save_departements(db)
+            st.success(T("Département enregistré."))
+            st.rerun()
+        else:
+            nouveau = {"id": config.new_dept_id(nom, ids), "nom": nom.strip(),
+                       "court": court.strip().upper(), "couleur": couleur}
+            config.set_departements([*DEPARTEMENTS, nouveau])
+            _save_departements(db)
+            st.success(T("Département ajouté."))
+            st.rerun()
+
+    if courant:
+        usage = db.dept_usage(cible)
+        st.write("")
+        if usage:
+            st.warning(
+                f'{usage} {T("enregistrement(s) utilisent ce département. Si vous le supprimez, "
+                             "ils resteront en base mais n\'afficheront plus de département reconnu.")}')
+        if st.button(T("Supprimer ce département"), key="dept_del"):
+            st.session_state["dept_confirm"] = cible
+        if st.session_state.get("dept_confirm") == cible:
+            st.error(T("Confirmez la suppression :") + f' **{courant["nom"]}**')
+            b = st.columns(2)
+            if b[0].button(T("Oui, supprimer"), key="dept_del_ok", type="primary"):
+                config.set_departements([d for d in DEPARTEMENTS if d["id"] != cible])
+                _save_departements(db)
+                st.session_state["dept_confirm"] = None
+                st.rerun()
+            if b[1].button(T("Annuler"), key="dept_del_no"):
+                st.session_state["dept_confirm"] = None
+                st.rerun()
+
+    st.write("")
+    if st.button(T("Réinitialiser les 8 départements d'usine"), key="dept_reset"):
+        st.session_state["dept_reset_confirm"] = True
+    if st.session_state.get("dept_reset_confirm"):
+        st.error(T("Vos ajouts et modifications de départements seront perdus. "
+                   "Les machines, arrêts, énergie, interventions, planning et pièces restent intacts."))
+        b = st.columns(2)
+        if b[0].button(T("Oui, réinitialiser"), key="dept_reset_ok", type="primary"):
+            config.reset_departements()
+            _save_departements(db)
+            st.session_state["dept_reset_confirm"] = False
+            st.rerun()
+        if b[1].button(T("Annuler"), key="dept_reset_no"):
+            st.session_state["dept_reset_confirm"] = False
+            st.rerun()
+
+
+def _settings_objectifs(db):
+    """Cibles de performance rappelées sous chaque indicateur du tableau de bord."""
+    st.write("")
+    section_title("Objectifs de performance")
+    st.markdown(
+        f'<div style="color:{THEME["muted2"]}; font-size:12.5px; line-height:1.6; margin-bottom:12px">'
+        + T("Chaque objectif s'affiche sous son indicateur au tableau de bord, en vert s'il est tenu "
+            "et en rouge sinon. Laissez un champ vide pour ne pas fixer de cible.")
+        + "</div>", unsafe_allow_html=True)
+
+    if not is_admin():
+        rows = [{T("Indicateur"): T(OBJECTIF_LABELS[m]),
+                 T("Cible"): (f'{"≤" if OBJECTIF_SENS[m] == "max" else "≥"} '
+                              f'{fmt_num(db.objectif(m), 1 if m == "mttr" else 0)} {OBJECTIF_UNITES[m]}'
+                              if db.objectif(m) is not None else "—")}
+                for m in OBJECTIF_LABELS]
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        st.info("Modification réservée aux administrateurs.")
+        return
+
+    with st.form("objectifs_form"):
+        cols = st.columns(len(OBJECTIF_LABELS))
+        saisis = {}
+        for col, metric in zip(cols, OBJECTIF_LABELS):
+            sens = "≤" if OBJECTIF_SENS[metric] == "max" else "≥"
+            courant = db.objectif(metric)
+            with col:
+                st.markdown(
+                    f'<div style="font-size:10.5px; color:{THEME["muted"]}; text-transform:uppercase; '
+                    f'font-weight:700">{T(OBJECTIF_LABELS[metric])}</div>'
+                    f'<div style="font-size:11px; color:{THEME["muted2"]}; margin-bottom:2px">'
+                    f'{sens} … {OBJECTIF_UNITES[metric]}</div>', unsafe_allow_html=True)
+                saisis[metric] = st.text_input("obj", value="" if courant is None else f"{courant:g}",
+                                               key=f"obj_{metric}", label_visibility="collapsed",
+                                               placeholder=T("aucune"))
+        if st.form_submit_button("Enregistrer les objectifs", type="primary"):
+            objectifs, invalides = {}, []
+            for metric, brut in saisis.items():
+                brut = (brut or "").strip().replace(",", ".")
+                if not brut:
+                    continue
+                try:
+                    objectifs[metric] = float(brut)
+                except ValueError:
+                    invalides.append(T(OBJECTIF_LABELS[metric]))
+            if invalides:
+                st.error(T("Valeur non numérique pour :") + " " + ", ".join(invalides))
+            else:
+                db.settings["objectifs"] = objectifs
+                save_settings(db)
+                st.success("Objectifs enregistrés — ils apparaissent sous les indicateurs du tableau de bord.")
 
 
 # ---------------------------------------------------------------------------
@@ -791,6 +1131,7 @@ def _nav():
         "Tableau de bord": view_dashboard,
         "Planning": view_planning,
         "Machines & Puissance": view_machines,
+        "Pièces de rechange": view_pieces,
         "Temps d'arrêt": view_arrets,
         "Interventions": view_interventions,
         "Énergie": view_energie,
@@ -805,6 +1146,7 @@ def _nav():
         "Tableau de bord": "Vue d'ensemble des indicateurs de maintenance",
         "Planning": "Calendrier des interventions planifiées (mois / année)",
         "Machines & Puissance": "Parc machines et puissance installée par département",
+        "Pièces de rechange": "Stock de pièces détachées, seuils d'alerte et mouvements",
         "Temps d'arrêt": "Journal des arrêts machines par département",
         "Interventions": "Historique des interventions et coûts pièces / main d'œuvre",
         "Énergie": "Suivi par département, administration et services",
@@ -965,6 +1307,104 @@ def machine_dialog(db, target):
         _close_dialog("mach"); st.rerun()
     if cancel:
         _close_dialog("mach"); st.rerun()
+
+
+@st.dialog("Pièce de rechange")
+def piece_dialog(db, target):
+    mode, val = target
+    p = next((x for x in db.pieces if x["id"] == val), None) if mode == "edit" else None
+    designation = st.text_input(T("Désignation"), value=(p["designation"] if p else ""),
+                                placeholder="Ex : Courroie trapézoïdale A32")
+    c1, c2 = st.columns(2)
+    with c1:
+        reference = st.text_input(T("Référence (optionnel)"), value=(p.get("reference", "") if p else ""),
+                                  placeholder="Ex : COU-A32")
+    with c2:
+        ids = ["", *[d["id"] for d in DEPARTEMENTS]]
+        courant = (p.get("departementId") or "") if p else ""
+        deptid = st.selectbox(T("Département associé"), ids,
+                              index=ids.index(courant) if courant in ids else 0,
+                              format_func=lambda i: T("— Non spécifié —") if not i else TD(i, dep(i)["nom"]),
+                              key="piece_dlg_dept")
+    c3, c4, c5 = st.columns(3)
+    with c3:
+        quantite = st.number_input(T("Quantité en stock"), 0.0, 1e9,
+                                   float(p["quantite"]) if p else 0.0, 1.0)
+    with c4:
+        unite = st.text_input(T("Unité"), value=(p.get("unite", "unité") if p else "unité"),
+                              placeholder="unité, m, L…")
+    with c5:
+        seuil = st.number_input(T("Seuil d'alerte"), 0.0, 1e9,
+                                float(p["seuilAlerte"]) if p else 1.0, 1.0)
+    c6, c7 = st.columns(2)
+    with c6:
+        cout = st.number_input(T("Coût unitaire (FCFA)"), 0.0, 1e12,
+                               float(p["coutUnitaire"]) if p else 0.0, 100.0)
+    with c7:
+        emplacement = st.text_input(T("Emplacement"), value=(p.get("emplacement", "") if p else ""),
+                                    placeholder="Magasin A - Rayon 2")
+    fournisseur = st.text_input(T("Fournisseur (optionnel)"), value=(p.get("fournisseur", "") if p else ""))
+
+    save, delete, cancel = _dialog_buttons(p is not None)
+    if save:
+        if not designation.strip():
+            st.warning(T("La désignation est requise."))
+        else:
+            data = {"designation": designation.strip(), "reference": reference.strip(),
+                    "departementId": deptid or None, "quantite": quantite,
+                    "unite": unite.strip() or "unité", "seuilAlerte": seuil,
+                    "coutUnitaire": cout, "emplacement": emplacement.strip(),
+                    "fournisseur": fournisseur.strip()}
+            rec = {**p, **data} if p else {"id": uid(), **data}
+            upsert_record(db, "pieces", rec)
+            _close_dialog("piece"); st.rerun()
+    if delete and p:
+        # L'historique des mouvements est conservé, comme dans l'application d'origine.
+        delete_record(db, "pieces", p["id"])
+        _close_dialog("piece"); st.rerun()
+    if cancel:
+        _close_dialog("piece"); st.rerun()
+
+
+@st.dialog("Mouvement de stock")
+def mouvement_dialog(db, target):
+    pieces = sorted(db.pieces, key=lambda p: p["designation"])
+    if not pieces:
+        st.info(T("Ajoutez d'abord une pièce au catalogue."))
+        if st.button(T("Fermer")):
+            st.session_state["piece_mvt_target"] = None; st.rerun()
+        return
+
+    ids = [p["id"] for p in pieces]
+    par_id = {p["id"]: p for p in pieces}
+
+    def _fmt(pid):
+        p = par_id[pid]
+        return (f'{p["designation"]} — {T("stock actuel")} : '
+                f'{fmt_num(p.get("quantite", 0))} {p.get("unite", "")}'.strip())
+
+    pid = st.selectbox(T("Pièce"), ids, format_func=_fmt, key="mvt_piece")
+    c1, c2 = st.columns(2)
+    with c1:
+        type_mvt = st.selectbox(T("Type de mouvement"), stock.TYPES_MOUVEMENT, format_func=TT,
+                                key="mvt_type")
+    with c2:
+        jour = st.date_input(T("Date"), value=date.today(), format="DD/MM/YYYY", key="mvt_date")
+    aide = (T("Pour un ajustement, indiquez la nouvelle quantité totale.")
+            if type_mvt == "Ajustement" else T("Quantité entrée ou sortie du magasin."))
+    qte = st.number_input(T("Quantité"), 0.0, 1e9, 1.0, 1.0, help=aide)
+    st.caption(aide)
+    motif = st.text_input(T("Motif"), placeholder="Ex : Réception livraison, sortie pour l'intervention PT-1")
+
+    b = st.columns(2)
+    if b[0].button(T("Enregistrer"), type="primary", width="stretch"):
+        stock.apply_mouvement(db, pid, type_mvt, qte, jour.isoformat(), motif.strip())
+        upsert_record(db, "pieces", par_id[pid])
+        upsert_record(db, "mouvements", db.mouvements[-1])
+        st.session_state["piece_mvt_target"] = None
+        st.rerun()
+    if b[1].button(T("Annuler"), width="stretch"):
+        st.session_state["piece_mvt_target"] = None; st.rerun()
 
 
 @st.dialog("Arrêt de maintenance")
@@ -1329,13 +1769,21 @@ def main():
     SECTIONS, SUBTITLES = _nav()
     lbl = {"en": "Machines: {m} · stops: {a} · interventions: {i}",
            "fr": "{m} machines · {a} arrêts · {i} interventions"}[_lang()]
+    # Navigation demandée par un raccourci interne (bandeau de stock…) : à appliquer
+    # avant que le radio ne soit instancié.
+    goto = st.session_state.pop("_goto", None)
+    if goto in SECTIONS:
+        st.session_state["nav_choice"] = goto
+
     with st.sidebar:
         st.markdown('<div class="admi-brand">' + logo_svg(34) + 'AMI</div>'
                     + f'<div class="admi-sub" style="margin-left:43px">{T("Analyse de Maintenance Industrielle")}</div>',
                     unsafe_allow_html=True)
         st.write("")
+        # key="nav_choice" : permet aux raccourcis internes (bandeau de stock…)
+        # de pointer une autre section avant le rerun.
         choice = st.radio("Navigation", list(SECTIONS.keys()), format_func=T,
-                          label_visibility="collapsed")
+                          label_visibility="collapsed", key="nav_choice")
         st.markdown(f'<div style="margin-top:20px; font-size:10.5px; color:{THEME["muted2"]}; '
                     f'line-height:1.5">' + lbl.format(m=len(db.machines), a=len(db.arrets),
                                                        i=len(db.interventions)) + '</div>',
@@ -1371,9 +1819,15 @@ def main():
         time.sleep(0.5)
         loader.empty()
 
-    st.markdown(f"# {T(choice)}")
-    st.markdown(f'<div style="color:{THEME["muted2"]}; font-size:12px; margin-top:-12px; '
-                f'margin-bottom:16px">{T(SUBTITLES[choice])}</div>', unsafe_allow_html=True)
+    # En-tête : titre à gauche, horloge live à droite (comme la topbar du HTML).
+    # L'horloge tourne dans son iframe, sans rerun : les filtres en cours restent.
+    titre, horloge = st.columns([4, 1], vertical_alignment="center")
+    with titre:
+        st.markdown(f"# {T(choice)}")
+        st.markdown(f'<div style="color:{THEME["muted2"]}; font-size:12px; margin-top:-12px; '
+                    f'margin-bottom:16px">{T(SUBTITLES[choice])}</div>', unsafe_allow_html=True)
+    with horloge:
+        st.iframe(live_clock_html(_lang()), height=52)
     st.session_state["_plot_n"] = 0   # clés de graphiques stables par run
     SECTIONS[choice](db)
 

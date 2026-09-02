@@ -4,10 +4,12 @@ Repris fidèlement de l'application HTML d'origine (ADMI version 11.08.2026).
 """
 from __future__ import annotations
 
+import unicodedata
+
 # ---------------------------------------------------------------------------
 # Départements de l'usine (id, nom complet, code court, couleur)
 # ---------------------------------------------------------------------------
-DEPARTEMENTS = [
+DEPARTEMENTS_DEFAUT = [
     {"id": "am",  "nom": "Articles Ménagers",            "court": "AM",  "couleur": "#7C83FD"},
     {"id": "ond", "nom": "Ondulations (Toitures Zinc)",  "court": "OND", "couleur": "#38BDF8"},
     {"id": "pt",  "nom": "Peinture",                     "court": "PT",  "couleur": "#FF6B6B"},
@@ -18,8 +20,40 @@ DEPARTEMENTS = [
     {"id": "srv", "nom": "Services Généraux",            "court": "SRV", "couleur": "#FB923C"},
 ]
 
+# Liste vivante : les départements sont modifiables par l'administrateur et
+# persistés avec les réglages. Les autres modules font `from .config import
+# DEPARTEMENTS` à l'import — d'où la mutation **sur place** dans
+# set_departements() : la référence partagée reste valable.
+DEPARTEMENTS = [dict(d) for d in DEPARTEMENTS_DEFAUT]
+
 DEPT_BY_ID = {d["id"]: d for d in DEPARTEMENTS}
 DEPT_COLOR = {d["id"]: d["couleur"] for d in DEPARTEMENTS}
+
+
+def set_departements(liste) -> None:
+    """Remplace la liste des départements sans casser les imports existants."""
+    DEPARTEMENTS[:] = [dict(d) for d in liste]
+    DEPT_BY_ID.clear()
+    DEPT_BY_ID.update({d["id"]: d for d in DEPARTEMENTS})
+    DEPT_COLOR.clear()
+    DEPT_COLOR.update({d["id"]: d["couleur"] for d in DEPARTEMENTS})
+
+
+def reset_departements() -> None:
+    """Revient aux 8 départements d'usine."""
+    set_departements(DEPARTEMENTS_DEFAUT)
+
+
+def new_dept_id(nom: str, existants) -> str:
+    """Identifiant technique dérivé du nom, unique dans la liste."""
+    sans_accents = unicodedata.normalize("NFD", str(nom or ""))
+    sans_accents = "".join(c for c in sans_accents if unicodedata.category(c) != "Mn")
+    base = "".join(c for c in sans_accents.lower() if c.isalnum())[:10] or "dept"
+    candidat, i = base, 1
+    while candidat in existants:
+        candidat = f"{base}{i}"
+        i += 1
+    return candidat
 
 
 def dep(dept_id: str) -> dict:
@@ -49,6 +83,24 @@ TYPES_PLAN = [
     "Contrôle réglementaire", "Révision générale", "Autre",
 ]
 STATUTS_MACHINE = ["En service", "En panne", "En maintenance", "Hors service"]
+
+# ---------------------------------------------------------------------------
+# Objectifs de performance : cible à atteindre pour chaque indicateur.
+# « min » = la cible est un plancher (on veut faire au moins autant),
+# « max » = la cible est un plafond (on veut rester en dessous).
+# ---------------------------------------------------------------------------
+OBJECTIF_SENS = {
+    "disponibilite": "min", "tauxPreventif": "min", "mtbf": "min",
+    "mttr": "max", "tempsArret": "max",
+}
+OBJECTIF_LABELS = {
+    "disponibilite": "Disponibilité", "tauxPreventif": "Taux préventif",
+    "mtbf": "MTBF", "mttr": "MTTR", "tempsArret": "Temps d'arrêt cumulé",
+}
+OBJECTIF_UNITES = {
+    "disponibilite": "%", "tauxPreventif": "%",
+    "mtbf": "h", "mttr": "h", "tempsArret": "h",
+}
 
 # ---------------------------------------------------------------------------
 # Palette du thème sombre (variables CSS de l'app d'origine)

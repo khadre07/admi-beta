@@ -20,7 +20,8 @@ from sqlalchemy import (Column, JSON, MetaData, String, Table, create_engine,
 
 from .data import DATA_DIR
 
-ENTITIES = ["machines", "arrets", "energie", "interventions", "planning"]
+ENTITIES = ["machines", "arrets", "energie", "interventions", "planning",
+            "pieces", "mouvements"]
 
 _meta = MetaData()
 _tables: dict = {}

@@ -108,6 +108,64 @@ def test_dept_filter_isolates_department():
     assert k_chi["tempsArretH"] == 2.0
 
 
+def _planned(pid, jour, statut):
+    return {"id": pid, "machineId": "m1", "departementId": "am",
+            "titre": "Graissage", "date": f"2026-01-{jour:02d}",
+            "type": "Préventif", "statut": statut, "description": ""}
+
+
+def test_taux_realisation_preventif_ignores_cancelled_actions():
+    db = _one_machine_db()
+    db.planning += [_planned("p1", 5, "Réalisé"), _planned("p2", 8, "Réalisé"),
+                    _planned("p3", 12, "En retard"), _planned("p4", 20, "Annulé")]
+    k = kpis.compute_kpis(db, periode="mois", annee=2026, mois=0, dept="all")
+    assert k["planningDus"] == 3       # les actions annulées sortent du dénominateur
+    assert k["planningRealises"] == 2
+    assert round(k["tauxRealisationPreventif"], 4) == round(200 / 3, 4)
+
+
+def test_taux_realisation_preventif_none_without_planning():
+    db = _one_machine_db()
+    k = kpis.compute_kpis(db, periode="mois", annee=2026, mois=0, dept="all")
+    assert k["planningDus"] == 0
+    assert k["tauxRealisationPreventif"] is None
+
+
+def test_planning_outside_period_is_excluded():
+    db = _one_machine_db()
+    db.planning += [_planned("p1", 5, "Réalisé"),
+                    {**_planned("p2", 5, "Réalisé"), "date": "2026-02-05"}]
+    k = kpis.compute_kpis(db, periode="mois", annee=2026, mois=0, dept="all")
+    assert k["planningDus"] == 1
+
+
+def test_objectif_atteint_when_higher_is_better():
+    # disponibilité, taux préventif, MTBF : la cible est un plancher
+    assert kpis.objectif_atteint("disponibilite", 92.0, 90.0) is True
+    assert kpis.objectif_atteint("disponibilite", 88.0, 90.0) is False
+    assert kpis.objectif_atteint("mtbf", 300.0, 300.0) is True  # égalité = atteint
+
+
+def test_objectif_atteint_when_lower_is_better():
+    # MTTR et temps d'arrêt : la cible est un plafond
+    assert kpis.objectif_atteint("mttr", 2.0, 3.0) is True
+    assert kpis.objectif_atteint("mttr", 4.0, 3.0) is False
+    assert kpis.objectif_atteint("tempsArret", 10.0, 10.0) is True
+
+
+def test_objectif_atteint_none_without_target_or_value():
+    assert kpis.objectif_atteint("disponibilite", 92.0, None) is None
+    assert kpis.objectif_atteint("mtbf", None, 300.0) is None
+
+
+def test_database_objectif_reads_settings():
+    db = Database()
+    assert db.objectif("disponibilite") is None  # aucun objectif défini par défaut
+    db.settings["objectifs"] = {"disponibilite": 90, "mttr": ""}
+    assert db.objectif("disponibilite") == 90.0
+    assert db.objectif("mttr") is None  # champ vidé = pas d'objectif
+
+
 def test_yearly_trend_shape():
     db = _one_machine_db()
     db.arrets.append({"id": "a1", "machineId": "m1", "departementId": "am", "type": "Panne",

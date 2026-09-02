@@ -18,6 +18,7 @@ from dataclasses import dataclass, field, asdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from . import config
 from .config import DEPARTEMENTS, TYPES_ARRET, TYPES_INTERV, TYPES_PLAN
 
 
@@ -70,6 +71,8 @@ class Database:
     energie: list = field(default_factory=list)
     interventions: list = field(default_factory=list)
     planning: list = field(default_factory=list)
+    pieces: list = field(default_factory=list)
+    mouvements: list = field(default_factory=list)
     settings: dict = field(default_factory=lambda: {"tempsTravail": {}})
 
     # -- lookups -----------------------------------------------------------
@@ -88,6 +91,27 @@ class Database:
         tt = self.settings.setdefault("tempsTravail", {})
         return tt.setdefault(dept_id, default_schedule())
 
+    def dept_usage(self, dept_id: str) -> int:
+        """Nombre d'enregistrements rattachés à un département, tous types confondus."""
+        return sum(1
+                   for coll in (self.machines, self.arrets, self.energie,
+                                self.interventions, self.planning, self.pieces)
+                   for rec in coll
+                   if rec.get("departementId") == dept_id)
+
+    def objectifs(self) -> dict:
+        return self.settings.setdefault("objectifs", {})
+
+    def objectif(self, metric: str):
+        """Cible fixée pour un indicateur, ou None si aucune (champ vide inclus)."""
+        v = self.objectifs().get(metric)
+        if v is None or v == "":
+            return None
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
     # -- (de)sérialisation -------------------------------------------------
     def to_dict(self) -> dict:
         return asdict(self)
@@ -100,6 +124,8 @@ class Database:
             energie=d.get("energie", []),
             interventions=d.get("interventions", []),
             planning=d.get("planning", []),
+            pieces=d.get("pieces", []),
+            mouvements=d.get("mouvements", []),
             settings=d.get("settings", {"tempsTravail": {}}),
         )
 
@@ -116,7 +142,7 @@ def _dbmod():
 def save_db(db: Database) -> None:
     """Écrit l'intégralité de l'état (utilisé pour l'import et l'amorçage démo)."""
     d = _dbmod()
-    for name in ("machines", "arrets", "energie", "interventions", "planning"):
+    for name in d.ENTITIES:
         d.replace_all(name, getattr(db, name))
     d.set_setting("settings", db.settings)
 
@@ -181,12 +207,17 @@ def load_db() -> Database:
     settings = d.get_settings().get("settings") or {"tempsTravail": {}}
     if "tempsTravail" not in settings:
         settings = {"tempsTravail": {}}
+    # Les départements personnalisés priment sur la liste d'usine.
+    if settings.get("departements"):
+        config.set_departements(settings["departements"])
     return Database(
         machines=d.list_records("machines"),
         arrets=d.list_records("arrets"),
         energie=d.list_records("energie"),
         interventions=d.list_records("interventions"),
         planning=d.list_records("planning"),
+        pieces=d.list_records("pieces"),
+        mouvements=d.list_records("mouvements"),
         settings=settings,
     )
 
@@ -214,6 +245,17 @@ _PIECES = [
     ("Courroie trapézoïdale", 12000), ("Roulement 6205", 4500), ("Joint torique", 800),
     ("Contacteur 25A", 9500), ("Fusible 32A", 1200), ("Vérin pneumatique", 28000),
     ("Filtre à huile", 3500), ("Capteur de proximité", 15000), ("Courroie crantée", 8000),
+]
+
+
+# Catalogue de départ du magasin (repris de l'application d'origine) :
+# désignation, département, quantité, seuil d'alerte, unité, coût unitaire, emplacement
+_SEED_STOCK = [
+    ("Courroie trapézoïdale A32", "am", 12, 3, "unité", 8500, "Magasin A - Rayon 2"),
+    ("Roulement 6205-2RS", "sl", 20, 5, "unité", 4500, "Magasin A - Rayon 4"),
+    ("Filtre à air compresseur", "srv", 6, 2, "unité", 15000, "Magasin B - Rayon 1"),
+    ("Résistance chauffante 2kW", "chi", 4, 1, "unité", 22000, "Magasin B - Rayon 3"),
+    ("Cylindre imprimeuse flexo", "sac", 2, 1, "unité", 180000, "Magasin A - Rayon 6"),
 ]
 
 
@@ -328,6 +370,14 @@ def generate_demo(seed: int = 20260811) -> Database:
                 "titre": f"{_plan_titles[ptype]} — {m['nom']}", "date": pdate.strftime("%Y-%m-%d"),
                 "type": ptype, "statut": statut, "description": "",
             })
+
+    # Magasin : catalogue de pièces de rechange
+    for designation, dept, qte, seuil, unite, cout, emplacement in _SEED_STOCK:
+        db.pieces.append({
+            "id": uid(), "reference": "", "designation": designation, "departementId": dept,
+            "quantite": qte, "seuilAlerte": seuil, "unite": unite, "coutUnitaire": cout,
+            "emplacement": emplacement, "fournisseur": "",
+        })
 
     # Horaires : Administration = 8h/j du lundi au vendredi (le reste en continu)
     db.dept_schedule("adm").update({"heuresParJour": 8, "jours": [True] * 5 + [False, False]})

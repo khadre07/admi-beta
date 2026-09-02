@@ -16,6 +16,7 @@ from .config import (DEPARTEMENTS, MOIS, MOIS_COURT, STATUTS_MACHINE,
                      TYPES_ARRET, TYPES_INTERV, TYPES_PLAN, dep)
 from .data import Database, uid
 from .kpis import hours_between, intervention_cost
+from .stock import piece_valeur
 
 TYPES = ["machines", "arrets", "energie", "interventions", "planning"]
 LABELS = {"machines": "Machines", "arrets": "Arrêts", "energie": "Énergie",
@@ -444,8 +445,27 @@ def export_bytes(db: Database) -> bytes:
                             i.get("technicien", ""), i.get("duree", 0), i.get("coutMainOeuvre", 0),
                             sum((p.get("cout", 0) * p.get("qte", 1)) for p in i.get("pieces", [])),
                             intervention_cost(i), i.get("description", "")] for i in db.interventions]),
+        "Pièces": (["Désignation", "Référence", "Département", "Quantité", "Unité", "Seuil d'alerte",
+                    "Coût unitaire (FCFA)", "Valeur (FCFA)", "Emplacement", "Fournisseur"],
+                   [[p["designation"], p.get("reference", ""),
+                     dep(p["departementId"])["nom"] if p.get("departementId") else "",
+                     p.get("quantite", 0), p.get("unite", ""), p.get("seuilAlerte", 0),
+                     p.get("coutUnitaire", 0), piece_valeur(p), p.get("emplacement", ""),
+                     p.get("fournisseur", "")] for p in db.pieces]),
+        "Mouvements": (["Date", "Pièce", "Type", "Quantité", "Motif"],
+                       [[m.get("date", ""), _piece_name(db, m["pieceId"]), m["type"],
+                         m.get("quantite", 0), m.get("motif", "")]
+                        for m in sorted(db.mouvements, key=lambda x: x.get("date", ""))]),
     }
     return _write_sheets(sheets)
+
+
+def _piece_name(db: Database, piece_id: str) -> str:
+    return next((p["designation"] for p in db.pieces if p["id"] == piece_id), "")
+
+
+def _piece_name(db: Database, piece_id: str) -> str:
+    return next((p["designation"] for p in db.pieces if p["id"] == piece_id), "")
 
 
 def template_bytes() -> bytes:
