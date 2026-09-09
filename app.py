@@ -886,6 +886,73 @@ def view_settings(db):
 
     _settings_objectifs(db)
     _settings_departements(db)
+    _settings_donnees(db)
+
+
+@st.dialog("Supprimer toutes les données")
+def raz_dialog():
+    """Effacement total : on fait recopier une phrase, pas cliquer un bouton.
+
+    Un bouton se clique par réflexe ; une phrase se tape volontairement. C'est
+    la seule action de l'application qui soit vraiment irréversible.
+    """
+    st.error(T("Cette action efface définitivement toutes les machines, arrêts, "
+               "relevés d'énergie, interventions, actions planifiées, pièces et "
+               "mouvements de stock. Elle est irréversible."))
+    portee = st.radio(
+        T("Que faut-il effacer ?"),
+        ["donnees", "tout"], key="raz_portee",
+        format_func=lambda p: T("Les données seulement — garder les départements "
+                                "et les horaires de travail") if p == "donnees"
+        else T("Tout — y compris les départements, les horaires et les réglages"))
+    st.markdown(T("Pour confirmer, recopiez ci-dessous :") +
+                f' **{admi_data.PHRASE_SUPPRESSION}**')
+    phrase = st.text_input(T("Phrase de confirmation"), key="raz_phrase",
+                           placeholder=admi_data.PHRASE_SUPPRESSION,
+                           label_visibility="collapsed")
+    b1, b2 = st.columns(2)
+    if b1.button(T("Supprimer définitivement"), key="raz_ok", type="primary"):
+        if not admi_data.confirmation_suppression(phrase):
+            st.error(T("La phrase ne correspond pas — rien n'a été supprimé."))
+        else:
+            admi_data.wipe_all(garder_departements=(portee == "donnees"))
+            st.session_state["raz_dialog"] = False
+            st.session_state["raz_done"] = portee
+            st.rerun()
+    if b2.button(T("Annuler"), key="raz_no"):
+        st.session_state["raz_dialog"] = False
+        st.rerun()
+
+
+def _settings_donnees(db):
+    """Zone de danger : tout effacer, ou recharger un jeu de démonstration."""
+    if not is_admin():
+        return
+    st.write("")
+    section_title("Données de l'application")
+    st.markdown(
+        f'<div style="color:{THEME["muted2"]}; font-size:12.5px; line-height:1.6; margin-bottom:12px">'
+        + T("Repartir d'une application vide pour une mise en service réelle, ou "
+            "recharger un jeu de démonstration pour présenter l'outil.")
+        + "</div>", unsafe_allow_html=True)
+
+    fait = st.session_state.pop("raz_done", None)
+    if fait:
+        st.success(T("Données supprimées — les départements et les horaires sont conservés.")
+                   if fait == "donnees" else T("Toutes les données ont été supprimées."))
+    if st.session_state.pop("demo_done", False):
+        st.success(T("Jeu de démonstration rechargé."))
+
+    c1, c2 = st.columns(2)
+    if c1.button(T("🗑 Supprimer toutes les données"), key="raz", width="stretch"):
+        st.session_state["raz_dialog"] = True
+    if c2.button(T("↺ Charger les données de démonstration"), key="demo", width="stretch"):
+        admi_data.load_demo()
+        st.session_state["demo_done"] = True
+        st.rerun()
+
+    if st.session_state.get("raz_dialog"):
+        raz_dialog()
 
 
 def _save_departements(db):

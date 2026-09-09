@@ -222,13 +222,68 @@ def _load_json_legacy():
     return None
 
 
+# Phrase à recopier pour confirmer un effacement total : un bouton se clique par
+# réflexe, une phrase se tape volontairement.
+PHRASE_SUPPRESSION = "supprimer la base"
+
+
+def confirmation_suppression(saisie: str) -> bool:
+    """Vrai si la phrase de confirmation est écrite (casse et espaces tolérés)."""
+    return " ".join(str(saisie or "").lower().split()) == PHRASE_SUPPRESSION
+
+
+def load_demo() -> Database:
+    """Remplace le contenu par le jeu de démonstration (bouton des Paramètres)."""
+    _dbmod().engine()   # la base peut n'avoir jamais été ouverte
+    config.reset_departements()
+    db = generate_demo()
+    save_db(db)
+    return db
+
+
+def wipe_all(garder_departements: bool = False) -> Database:
+    """Efface les enregistrements, et selon le cas le paramétrage.
+
+    `garder_departements` conserve la liste des départements et les horaires de
+    travail : à la mise en service, on jette les données d'essai mais on garde
+    un paramétrage souvent long à ressaisir.
+
+    Les réglages sont réécrits (même vides) plutôt que supprimés : c'est ce qui
+    marque la base comme initialisée et empêche la démo de revenir au lancement
+    suivant.
+    """
+    d = _dbmod()
+    d.engine()
+    for name in d.ENTITIES:
+        d.replace_all(name, [])
+    vide = Database()
+    if garder_departements:
+        ancien = d.get_settings().get("settings") or {}
+        for cle in ("departements", "tempsTravail"):
+            if ancien.get(cle):
+                vide.settings[cle] = ancien[cle]
+    else:
+        config.reset_departements()
+    d.set_setting("settings", vide.settings)
+    return vide
+
+
 def load_db() -> Database:
-    """Charge depuis la base. Première fois : migre l'ancien JSON s'il existe,
-    sinon génère des données de démo."""
+    """Charge depuis la base.
+
+    Première ouverture : migre l'ancien JSON s'il existe. Sinon l'application
+    démarre **vide** — un logiciel livré ne s'ouvre pas sur des données
+    inventées. Le jeu de démonstration s'amorce seulement si `ADMI_DEMO=1`, et
+    reste chargeable à la demande depuis Paramètres.
+    """
     d = _dbmod()
     d.engine()  # crée les tables si nécessaire
-    if d.is_empty():
+    if d.is_empty() and not d.get_settings().get("settings"):
         migrated = _load_json_legacy()
+        if migrated is None and os.environ.get("ADMI_DEMO") != "1":
+            vide = Database()
+            save_settings(vide)      # marque la base : la démo ne s'invitera pas
+            return vide
         db = migrated if migrated else generate_demo()
         save_db(db)
         if migrated and DATA_FILE.exists():

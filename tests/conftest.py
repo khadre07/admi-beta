@@ -21,6 +21,8 @@ def app(tmp_path, monkeypatch):
     from admi import auth, license as lic
 
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'test.db'}")
+    # L'application démarre vide ; les tests de bout en bout veulent du contenu.
+    monkeypatch.setenv("ADMI_DEMO", "1")
     monkeypatch.setattr(lic, "LIC_FILE", tmp_path / "license.json")
     monkeypatch.setattr(auth, "USERS_FILE", tmp_path / "users.json")
     lic.activate(lic.generate_license(), "tests")

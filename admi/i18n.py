@@ -150,6 +150,35 @@ _EN = {
     "Le nom et le code court sont requis.": "Name and short code are required.",
     "Département enregistré.": "Department saved.", "Département ajouté.": "Department added.",
     "Supprimer ce département": "Delete this department",
+    # Données de l'application (zone de danger)
+    "Données de l'application": "Application data",
+    "Repartir d'une application vide pour une mise en service réelle, ou "
+    "recharger un jeu de démonstration pour présenter l'outil.":
+        "Start from an empty application for a real roll-out, or reload a "
+        "demonstration dataset to present the tool.",
+    "🗑 Supprimer toutes les données": "🗑 Delete all data",
+    "↺ Charger les données de démonstration": "↺ Load demonstration data",
+    "Toutes les données ont été supprimées.": "All data has been deleted.",
+    "Jeu de démonstration rechargé.": "Demonstration dataset reloaded.",
+    "Supprimer toutes les données": "Delete all data",
+    "Cette action efface définitivement toutes les machines, arrêts, "
+    "relevés d'énergie, interventions, actions planifiées, pièces et "
+    "mouvements de stock. Elle est irréversible.":
+        "This permanently erases every machine, downtime event, energy reading, "
+        "intervention, scheduled action, spare part and stock movement. "
+        "It cannot be undone.",
+    "Que faut-il effacer ?": "What should be erased?",
+    "Les données seulement — garder les départements et les horaires de travail":
+        "Data only — keep departments and working hours",
+    "Tout — y compris les départements, les horaires et les réglages":
+        "Everything — including departments, working hours and settings",
+    "Données supprimées — les départements et les horaires sont conservés.":
+        "Data deleted — departments and working hours have been kept.",
+    "Pour confirmer, recopiez ci-dessous :": "To confirm, type the following:",
+    "Phrase de confirmation": "Confirmation phrase",
+    "Supprimer définitivement": "Delete permanently",
+    "La phrase ne correspond pas — rien n'a été supprimé.":
+        "The phrase does not match — nothing was deleted.",
     # Alertes par e-mail
     "Alerte maintenance": "Maintenance alert",
     "Message automatique envoyé par AMI. Ne pas répondre.":
