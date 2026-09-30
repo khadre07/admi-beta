@@ -342,6 +342,31 @@ _EN = {
     "Envoyer une alerte de test": "Send a test alert",
     "Ceci est un test d'alerte AMI.": "This is an AMI test alert.",
     "Aucun canal configuré (e-mail ou SMS).": "No channel configured (email or SMS).",
+    # Seuils d'heures d'utilisation machine & alertes associées
+    "Seuil d'entretien (h, 0 = aucun)": "Service threshold (h, 0 = none)",
+    "Seuil d'arrêt (h, 0 = aucun)": "Shutdown threshold (h, 0 = none)",
+    "Heures d'utilisation": "Usage hours",
+    "Heures d'utilisation actuelles": "Current usage hours",
+    "Suivi seuils": "Threshold status",
+    "À arrêter": "Shut down", "Entretien requis": "Service due",
+    "Seuil proche": "Near threshold", "OK": "OK",
+    "Maintenance à prévoir": "Maintenance due soon", "Maintenance requise": "Maintenance required",
+    "Arrêt à prévoir": "Shutdown due soon", "Seuil d'arrêt atteint": "Shutdown threshold reached",
+    "Cette machine approche de son seuil d'entretien.":
+        "This machine is nearing its service threshold.",
+    "Cette machine a atteint son seuil d'entretien.":
+        "This machine has reached its service threshold.",
+    "Cette machine approche de son seuil d'arrêt (fin de vie).":
+        "This machine is nearing its shutdown threshold (end of life).",
+    "Cette machine a atteint son seuil d'arrêt — planifier son arrêt ou son remplacement.":
+        "This machine has reached its shutdown threshold — plan its shutdown or replacement.",
+    "Reste avant seuil": "Remaining before threshold", "Dépassement": "Overrun",
+    "prév.": "prev.", "corr.": "corr.",
+    # Historique des pannes par machine
+    "Historique des pannes par machine": "Breakdown history by machine",
+    "Afficher tous les arrêts": "Show all stops", "Dernière panne": "Last breakdown",
+    "MTBF (h)": "MTBF (h)", "Pannes": "Breakdowns", "Arrêts": "Stops",
+    "Aucune panne enregistrée pour cette machine.": "No breakdown recorded for this machine.",
     # En-têtes de tableaux & champs
     "Puissance (kW)": "Power (kW)", "Mise en service": "Commissioned", "Dépt.": "Dept.",
     "Début": "Start", "Fin": "End", "Durée (h)": "Duration (h)", "Pièces": "Parts",

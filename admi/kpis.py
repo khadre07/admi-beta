@@ -50,6 +50,89 @@ def opening_hours(db, dept_id: str, start: datetime, end: datetime) -> float:
     return total
 
 
+def machine_usage_hours(db, machine: dict, now: datetime | None = None) -> float:
+    """Heures d'utilisation cumulées d'une machine depuis sa mise en service.
+
+    = heures d'ouverture du département (dateMES -> maintenant) - heures d'arrêt
+    de cette machine. Bornée à 0. Sans dateMES, renvoie 0.
+    """
+    mes = str(machine.get("dateMES") or "").strip()
+    if not mes:
+        return 0.0
+    end = now or datetime.now()
+    opening = opening_hours(db, machine.get("departementId"), _parse(mes), end)
+    arrets = sum(hours_between(a["dateDebut"], a["dateFin"])
+                 for a in db.arrets
+                 if a.get("machineId") == machine.get("id") and a.get("dateFin"))
+    return max(0.0, round(opening - arrets, 6))
+
+
+def machine_arret_stats(db, machine_id: str, pannes_only: bool = True,
+                         now: datetime | None = None) -> dict:
+    """Mini-bilan des arrêts d'une machine (historique par machine).
+
+    `pannes_only` restreint le décompte/affichage aux arrêts de type « Panne ».
+    Le MTBF machine reste basé sur les pannes = heures d'utilisation / nb pannes.
+    """
+    tous = [a for a in db.arrets if a.get("machineId") == machine_id]
+    selection = [a for a in tous if not pannes_only or a.get("type") == "Panne"]
+    temps = sum(hours_between(a["dateDebut"], a["dateFin"])
+                for a in selection if a.get("dateFin"))
+    derniere = max((a["dateDebut"] for a in selection), default=None)
+    nb_pannes = sum(1 for a in tous if a.get("type") == "Panne")
+    machine = db.machine(machine_id)
+    usage = machine_usage_hours(db, machine, now) if machine else 0.0
+    mtbf = round(usage / nb_pannes, 6) if nb_pannes > 0 else None
+    return {"nb": len(selection), "tempsArretH": round(temps, 6),
+            "derniere": derniere, "nbPannes": nb_pannes, "mtbf": mtbf}
+
+
+# Niveaux d'alerte de seuil, ordonnés (permet de n'escalader que vers le haut).
+_USAGE_LEVELS = {"": 0, "approche": 1, "atteint": 2}
+
+
+def usage_alert_level(usage: float, seuil, margin_pct: float = 90.0) -> str:
+    """Niveau d'alerte pour un temps d'utilisation face à un seuil.
+
+    "" (rien), "approche" (>= marge % du seuil) ou "atteint" (>= seuil).
+    Un seuil vide/nul/non numérique désactive l'alerte -> "".
+    """
+    try:
+        seuil = float(seuil)
+    except (TypeError, ValueError):
+        return ""
+    if seuil <= 0:
+        return ""
+    if usage >= seuil:
+        return "atteint"
+    if usage >= seuil * margin_pct / 100.0:
+        return "approche"
+    return ""
+
+
+def pending_usage_alerts(usage: float, seuil_maintenance, seuil_arret,
+                         notified: dict | None = None, margin_pct: float = 90.0):
+    """Décide quelles alertes de seuil sont *nouvelles* (anti-spam). Fonction pure.
+
+    `notified` = niveaux déjà notifiés {"maintenance": niveau, "arret": niveau}.
+    Renvoie (alertes_nouvelles, etat_maj) : une alerte n'est émise que si son
+    niveau dépasse celui déjà notifié (jamais de rappel à chaque rerun).
+    """
+    notified = notified or {}
+    out = dict(notified)
+    alerts = []
+    for kind, seuil in (("maintenance", seuil_maintenance), ("arret", seuil_arret)):
+        level = usage_alert_level(usage, seuil, margin_pct)
+        prev = notified.get(kind, "") or ""
+        if _USAGE_LEVELS[level] > _USAGE_LEVELS.get(prev, 0):
+            alerts.append({"kind": kind, "level": level,
+                           "seuil": float(seuil), "usage": usage})
+            out[kind] = level
+        else:
+            out[kind] = prev
+    return alerts, out
+
+
 def period_bounds(periode: str, annee: int, mois: int):
     if periode == "mois":
         start = datetime(annee, mois + 1, 1)

@@ -16,8 +16,8 @@ import urllib.request
 from email.message import EmailMessage
 from pathlib import Path
 
-from . import i18n
-from .config import THEME
+from . import i18n, kpis
+from .config import THEME, dep
 
 # Le logo voyage avec le message : une image appelée par URL serait bloquée par
 # Gmail tant que le destinataire n'a pas cliqué « afficher les images ».
@@ -208,6 +208,68 @@ def send_sms(cfg: dict, body: str) -> tuple[bool, str]:
     if sent:
         return True, f"SMS envoyé à {sent} numéro(s)." + (f" Erreurs : {errors}" if errors else "")
     return False, f"Échec SMS : {errors}"
+
+
+# --- Alertes de seuil sur le temps d'utilisation machine --------------------
+# Libellés par (type de seuil, niveau). Passés par i18n.t : FR par défaut, EN
+# si une traduction existe (sinon repli FR).
+_USAGE_WORDING = {
+    ("maintenance", "approche"): ("Maintenance à prévoir",
+                                  "Cette machine approche de son seuil d'entretien."),
+    ("maintenance", "atteint"): ("Maintenance requise",
+                                 "Cette machine a atteint son seuil d'entretien."),
+    ("arret", "approche"): ("Arrêt à prévoir",
+                            "Cette machine approche de son seuil d'arrêt (fin de vie)."),
+    ("arret", "atteint"): ("Seuil d'arrêt atteint",
+                           "Cette machine a atteint son seuil d'arrêt — planifier son "
+                           "arrêt ou son remplacement."),
+}
+
+
+def _usage_message(machine: dict, alerte: dict) -> dict:
+    """Construit un message d'alerte de seuil (sujet, corps, tableau de détails)."""
+    _t, _n = i18n.t, i18n.fmt_num
+    titre, corps = _USAGE_WORDING[(alerte["kind"], alerte["level"])]
+    nom = machine.get("nom", "?")
+    usage, seuil = alerte["usage"], alerte["seuil"]
+    reste = seuil - usage
+    details = {
+        _t("Machine"): nom,
+        _t("Département"): i18n.dept_label(machine.get("departementId"),
+                                           dep(machine.get("departementId")).get("nom", "")),
+        _t("Heures d'utilisation"): f"{_n(usage)} h",
+        _t("Seuil"): f"{_n(seuil)} h",
+    }
+    if reste > 0:
+        details[_t("Reste avant seuil")] = f"{_n(reste)} h"
+    else:
+        details[_t("Dépassement")] = f"{_n(-reste)} h"
+    return {"kind": alerte["kind"], "level": alerte["level"],
+            "subject": f"AMI — {_t(titre)} : {nom}", "message": _t(corps), "details": details}
+
+
+def build_usage_messages(db, cfg: dict) -> tuple[list[dict], bool]:
+    """Alertes de seuil *nouvelles* à envoyer, avec mise à jour de l'anti-spam.
+
+    N'envoie rien et ne persiste rien : renvoie (messages, dirty). `db.settings`
+    est muté (état des niveaux déjà notifiés) ; le caller persiste si dirty.
+    """
+    margin = float(cfg.get("usage_margin_pct", 90) or 90)
+    etat = db.settings.setdefault("alertesHeures", {})
+    messages: list[dict] = []
+    dirty = False
+    for m in db.machines:
+        sm, sa = m.get("seuilMaintenanceH") or 0, m.get("seuilArretH") or 0
+        if not sm and not sa:
+            continue
+        usage = kpis.machine_usage_hours(db, m)
+        notified = etat.get(m["id"], {})
+        nouvelles, new_state = kpis.pending_usage_alerts(usage, sm, sa, notified, margin)
+        if new_state != notified:
+            etat[m["id"]] = new_state
+            dirty = True
+        messages += [_usage_message(m, a) for a in nouvelles]
+    return messages, dirty
 
 
 def notify(cfg: dict, subject: str, message: str, details: dict | None = None) -> dict:

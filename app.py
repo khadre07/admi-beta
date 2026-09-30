@@ -146,6 +146,25 @@ def _maybe_alert(subject, message, details=None):
         pass
 
 
+def check_machine_usage_alerts(db):
+    """Alerte quand une machine approche/atteint son seuil d'heures d'utilisation.
+
+    Best-effort : un e-mail par franchissement (anti-spam via db.settings), jamais
+    de plantage. Appelée une fois par session (voir main()).
+    """
+    try:
+        cfg = get_alert_config()
+        if not cfg.get("enabled"):
+            return
+        messages, dirty = alerts.build_usage_messages(db, cfg)
+        for msg in messages:
+            alerts.notify(cfg, msg["subject"], msg["message"], msg["details"])
+        if dirty:
+            save_settings(db)
+    except Exception:
+        pass
+
+
 def fmt_num(n, dec=0):
     return i18n.fmt_num(n, dec)
 
@@ -385,6 +404,25 @@ def view_dashboard(db):
 # ---------------------------------------------------------------------------
 # SECTION : Machines & Puissance
 # ---------------------------------------------------------------------------
+def _machine_usage_row(db, m):
+    """(heures d'utilisation, badge d'état) d'une machine vis-à-vis de ses seuils."""
+    usage = kpis.machine_usage_hours(db, m)
+    sm, sa = m.get("seuilMaintenanceH") or 0, m.get("seuilArretH") or 0
+    lvl_arret = kpis.usage_alert_level(usage, sa)
+    lvl_maint = kpis.usage_alert_level(usage, sm)
+    if lvl_arret == "atteint":
+        etat = "🔴 " + T("À arrêter")
+    elif lvl_maint == "atteint":
+        etat = "🟠 " + T("Entretien requis")
+    elif "approche" in (lvl_arret, lvl_maint):
+        etat = "🟡 " + T("Seuil proche")
+    elif sm or sa:
+        etat = "🟢 " + T("OK")
+    else:
+        etat = "—"
+    return usage, etat
+
+
 def view_machines(db):
     _crud_controls(db, "mach", "＋ Nouvelle machine", db.machines,
                    lambda m: f'{m["nom"]} ({dep(m["departementId"])["court"]})')
@@ -395,10 +433,46 @@ def view_machines(db):
     plot(charts.bar_puissance_by_dept(db))
 
     section_title("Parc machines")
-    rows = [{T("Machine"): m["nom"], T("Dépt."): dep(m["departementId"])["court"],
-             T("Puissance (kW)"): m.get("puissanceKW", 0), T("Mise en service"): m.get("dateMES", ""),
-             T("Statut"): TT(m.get("statut", ""))} for m in db.machines]
+    rows = []
+    for m in db.machines:
+        usage, etat = _machine_usage_row(db, m)
+        rows.append({T("Machine"): m["nom"], T("Dépt."): dep(m["departementId"])["court"],
+                     T("Puissance (kW)"): m.get("puissanceKW", 0),
+                     T("Mise en service"): m.get("dateMES", ""),
+                     T("Heures d'utilisation"): f"{fmt_num(usage)} h",
+                     T("Suivi seuils"): etat,
+                     T("Statut"): TT(m.get("statut", ""))})
     st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+
+    section_title("Historique des pannes par machine")
+    if db.machines:
+        noms = {m["id"]: f'{m["nom"]} ({dep(m["departementId"])["court"]})' for m in db.machines}
+        sel = st.selectbox(T("Machine"), list(noms), format_func=lambda i: noms[i], key="hist_mach")
+        pannes_only = not st.checkbox(T("Afficher tous les arrêts"), key="hist_all")
+        s = kpis.machine_arret_stats(db, sel, pannes_only=pannes_only)
+        k1, k2, k3, k4 = st.columns(4)
+        with k1:
+            kpi_card("Pannes" if pannes_only else "Arrêts", fmt_num(s["nb"]), color=THEME["accent2"])
+        with k2:
+            kpi_card("Temps d'arrêt (h)", fmt_num(s["tempsArretH"], 1), color=THEME["danger"])
+        with k3:
+            kpi_card("MTBF (h)", fmt_num(s["mtbf"], 1) if s["mtbf"] is not None else "—",
+                     color=THEME["accent"])
+        with k4:
+            kpi_card("Dernière panne", s["derniere"].replace("T", " ") if s["derniere"] else "—",
+                     color=THEME["muted"], value_size=16)
+        sel_arrets = sorted(
+            [a for a in db.arrets
+             if a["machineId"] == sel and (not pannes_only or a.get("type") == "Panne")],
+            key=lambda a: a["dateDebut"], reverse=True)
+        if sel_arrets:
+            hrows = [{T("Début"): a["dateDebut"].replace("T", " "), T("Type"): TT(a.get("type", "")),
+                      T("Cause"): a.get("cause", ""),
+                      T("Durée (h)"): round(kpis.hours_between(a["dateDebut"], a.get("dateFin", "")), 1),
+                      T("Description"): a.get("description", "")} for a in sel_arrets]
+            st.dataframe(pd.DataFrame(hrows), width="stretch", hide_index=True)
+        else:
+            st.caption(T("Aucune panne enregistrée pour cette machine."))
 
     if st.session_state.get("mach_target"):
         machine_dialog(db, st.session_state.mach_target)
@@ -1431,13 +1505,24 @@ def machine_dialog(db, target):
     with c4:
         statut = st.selectbox(T("Statut"), STATUTS_MACHINE, format_func=TT,
                               index=STATUTS_MACHINE.index(m["statut"]) if (m and m["statut"] in STATUTS_MACHINE) else 0)
+    c5, c6 = st.columns(2)
+    with c5:
+        seuil_maint = st.number_input(T("Seuil d'entretien (h, 0 = aucun)"), 0.0, 1_000_000.0,
+                                      float(m.get("seuilMaintenanceH") or 0) if m else 0.0, 100.0)
+    with c6:
+        seuil_arret = st.number_input(T("Seuil d'arrêt (h, 0 = aucun)"), 0.0, 1_000_000.0,
+                                      float(m.get("seuilArretH") or 0) if m else 0.0, 100.0)
+    if m:
+        st.caption(T("Heures d'utilisation actuelles")
+                   + f" : {fmt_num(kpis.machine_usage_hours(db, m))} h")
     save, delete, cancel = _dialog_buttons(m is not None)
     if save:
         if not nom.strip():
             st.warning(T("Le nom de la machine est requis."))
         else:
             data = {"nom": nom.strip(), "departementId": deptid, "puissanceKW": kw,
-                    "dateMES": mes.isoformat(), "statut": statut}
+                    "dateMES": mes.isoformat(), "statut": statut,
+                    "seuilMaintenanceH": seuil_maint, "seuilArretH": seuil_arret}
             rec = {**m, **data} if m else {"id": uid(), **data}
             upsert_record(db, "machines", rec)
             if statut == "En panne" and (m is None or m.get("statut") != "En panne"):
@@ -1860,6 +1945,9 @@ def main():
         ph.empty()
 
     db = get_db()
+    if not st.session_state.get("_usage_checked"):
+        check_machine_usage_alerts(db)
+        st.session_state["_usage_checked"] = True
     SECTIONS, SUBTITLES = _nav()
     lbl = {"en": "Machines: {m} · stops: {a} · interventions: {i}",
            "fr": "{m} machines · {a} arrêts · {i} interventions"}[_lang()]

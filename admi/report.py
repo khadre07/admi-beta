@@ -225,6 +225,37 @@ def _line_drawing(years, values, width=460, height=175):
     return d
 
 
+def _kv_table(pairs, per_row=2):
+    """Petit tableau des valeurs tracées, placé sous un graphe (les chiffres du
+    graphe, lisibles noir sur blanc). `pairs` = liste de (libellé, valeur_str)."""
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Table, TableStyle
+    if not pairs:
+        return Table([[""]], colWidths=[1 * mm])
+    cells, row = [], []
+    for lab, val in pairs:
+        row += [str(lab), str(val)]
+        if len(row) == per_row * 2:
+            cells.append(row)
+            row = []
+    if row:
+        row += [""] * (per_row * 2 - len(row))
+        cells.append(row)
+    lab_w, val_w = 44 * mm, 28 * mm
+    t = Table(cells, colWidths=[lab_w, val_w] * per_row, hAlign="LEFT")
+    style = [("FONTSIZE", (0, 0), (-1, -1), 8),
+             ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#334155")),
+             ("TOPPADDING", (0, 0), (-1, -1), 1.5),
+             ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
+             ("LINEBELOW", (0, 0), (-1, -1), 0.25, colors.HexColor("#E2E8F2"))]
+    for c in range(per_row):
+        style.append(("ALIGN", (c * 2 + 1, 0), (c * 2 + 1, -1), "RIGHT"))
+        style.append(("FONTNAME", (c * 2 + 1, 0), (c * 2 + 1, -1), "Helvetica-Bold"))
+    t.setStyle(TableStyle(style))
+    return t
+
+
 def build_intervention_report(db, interv) -> bytes:
     """Rapport PDF pour UNE intervention (fiche imprimable)."""
     from reportlab.lib import colors
@@ -376,15 +407,21 @@ def build_pdf_report(db, periode, annee, mois, dept) -> bytes:
     cols = [d["couleur"] for d in DEPARTEMENTS]
 
     # Disponibilité (camembert dispo / arrêt)
+    dispo = round(k["disponibilite"], 1)
     story.append(Paragraph(_t("Disponibilité"), h3))
     story.append(_pie_drawing([_t("Disponible"), _t("Temps d'arrêt")],
-                              [round(k["disponibilite"], 1), round(100 - k["disponibilite"], 1)],
+                              [dispo, round(100 - dispo, 1)],
                               [THEME["success"], THEME["danger"]]))
+    story.append(_kv_table([(_t("Disponible"), f"{_fmt(dispo, 1)} %"),
+                            (_t("Temps d'arrêt"), f"{_fmt(100 - dispo, 1)} %")]))
     story.append(Spacer(1, 3 * mm))
 
     ad = kpis.arrets_by_dept(arrets)
     story.append(Paragraph(_t("Temps d'arrêt par département (h)"), h3))
     story.append(_bar_drawing(courts, [round(ad.get(d["id"], 0), 1) for d in DEPARTEMENTS], cols))
+    story.append(_kv_table([(d["court"], f"{_fmt(ad.get(d['id'], 0), 1)} h")
+                            for d in DEPARTEMENTS if ad.get(d["id"], 0)]
+                           or [(_t("Aucune donnée"), "—")]))
     story.append(Spacer(1, 3 * mm))
 
     cd = kpis.cout_by_dept(intervs)
@@ -393,6 +430,7 @@ def build_pdf_report(db, periode, annee, mois, dept) -> bytes:
     if cd_items:
         story.append(_pie_drawing([i18n.dept_label(d["id"], d["nom"]) for d, _ in cd_items],
                                   [v for _, v in cd_items], [d["couleur"] for d, _ in cd_items]))
+        story.append(_kv_table([(d["court"], _money(v)) for d, v in cd_items]))
     else:
         story.append(Paragraph(_t("Aucune donnée"), small))
     story.append(Spacer(1, 3 * mm))
@@ -400,6 +438,9 @@ def build_pdf_report(db, periode, annee, mois, dept) -> bytes:
     ed = kpis.energie_by_dept(energie)
     story.append(Paragraph(_t("Énergie par département (kWh)"), h3))
     story.append(_bar_drawing(courts, [round(ed.get(d["id"], 0)) for d in DEPARTEMENTS], cols))
+    story.append(_kv_table([(d["court"], f"{_fmt(ed.get(d['id'], 0))} kWh")
+                            for d in DEPARTEMENTS if ed.get(d["id"], 0)]
+                           or [(_t("Aucune donnée"), "—")]))
     story.append(Spacer(1, 3 * mm))
 
     pc = kpis.interv_prev_corr_by_dept(intervs)
@@ -407,11 +448,16 @@ def build_pdf_report(db, periode, annee, mois, dept) -> bytes:
     story.append(_grouped_bar_drawing(courts, [pc.get(d["id"], (0, 0))[0] for d in DEPARTEMENTS],
                                       [pc.get(d["id"], (0, 0))[1] for d in DEPARTEMENTS],
                                       THEME["success"], THEME["danger"]))
+    story.append(_kv_table([(d["court"], f"{pc[d['id']][0]} {_t('prév.')} / {pc[d['id']][1]} {_t('corr.')}")
+                            for d in DEPARTEMENTS if d["id"] in pc]
+                           or [(_t("Aucune donnée"), "—")], per_row=1))
     story.append(Spacer(1, 3 * mm))
 
     trend = kpis.yearly_trend(db, dept)
     story.append(Paragraph(_t("Tendance de disponibilité (%)"), h3))
     story.append(_line_drawing([r["year"] for r in trend], [round(r["disponibilite"], 1) for r in trend]))
+    story.append(_kv_table([(str(r["year"]), f"{_fmt(r['disponibilite'], 1)} %") for r in trend],
+                           per_row=3))
 
     doc.build(story)
     return buf.getvalue()
