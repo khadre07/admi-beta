@@ -19,8 +19,8 @@ from streamlit_calendar import calendar as st_calendar
 # le script après un `git pull` sans redémarrer le processus : les modules déjà
 # chargés restent en mémoire, et un `from ... import <nouveau nom>` ferait
 # planter l'application entière au lieu de n'affecter que la fonction concernée.
-from admi import (alerts, auth, charts, config, data as admi_data, i18n, kpis,
-                  license as lic, report, stock, theme as admi_theme, update)
+from admi import (alerts, auth, charts, config, data as admi_data, db as dbmod,
+                  i18n, kpis, license as lic, report, stock, theme as admi_theme, update)
 from admi.config import (DEPARTEMENTS, DOW, MOIS, OBJECTIF_LABELS,
                          OBJECTIF_SENS, OBJECTIF_UNITES, STATUTS_MACHINE, THEME,
                          TYPES_ARRET, TYPES_INTERV, TYPES_PLAN, dep)
@@ -961,6 +961,8 @@ def view_settings(db):
     _settings_objectifs(db)
     _settings_departements(db)
     _settings_donnees(db)
+    _settings_stockage(db)
+    _settings_reseau(db)
 
 
 @st.dialog("Supprimer toutes les données")
@@ -1027,6 +1029,145 @@ def _settings_donnees(db):
 
     if st.session_state.get("raz_dialog"):
         raz_dialog()
+
+
+@st.dialog("Restaurer une sauvegarde")
+def restore_dialog(db):
+    """Restauration : destructive, donc phrase à recopier (comme l'effacement)."""
+    st.error(T("La restauration REMPLACE toutes les données actuelles par celles de "
+               "la sauvegarde. Cette action est irréversible."))
+    st.markdown(T("Pour confirmer, recopiez ci-dessous :")
+                + f" **{admi_data.PHRASE_SUPPRESSION}**")
+    phrase = st.text_input(T("Phrase de confirmation"), key="restore_phrase",
+                           placeholder=admi_data.PHRASE_SUPPRESSION, label_visibility="collapsed")
+    b1, b2 = st.columns(2)
+    if b1.button(T("Restaurer définitivement"), key="restore_ok", type="primary"):
+        if not admi_data.confirmation_suppression(phrase):
+            st.error(T("La phrase ne correspond pas — rien n'a été restauré."))
+        else:
+            try:
+                admi_data.restore_backup(db, st.session_state.get("restore_payload"))
+                st.session_state.pop("restore_payload", None)
+                st.session_state["restore_dialog"] = False
+                st.session_state["restore_done"] = True
+                st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                st.error(T("Échec de la restauration :") + f" {exc}")
+    if b2.button(T("Annuler"), key="restore_cancel"):
+        st.session_state["restore_dialog"] = False
+        st.rerun()
+
+
+def _settings_stockage(db):
+    """R2 + R3 — dossier de sauvegarde configurable, sauvegarde & restauration."""
+    if not is_admin():
+        return
+    st.write("")
+    section_title("Stockage & sauvegarde")
+    st.markdown(
+        f'<div style="color:{THEME["muted2"]}; font-size:12.5px; line-height:1.6; margin-bottom:10px">'
+        + T("La base de données vit dans PostgreSQL / SQLite (DATABASE_URL). Le dossier "
+            "ci-dessous reçoit les fichiers de sauvegarde (admi-backup-*.json).")
+        + "</div>", unsafe_allow_html=True)
+
+    if st.session_state.pop("restore_done", False):
+        st.success(T("Sauvegarde restaurée — les données actuelles ont été remplacées."))
+
+    # R2 — dossier de sauvegarde
+    with st.form("backup_dir_form"):
+        chemin = st.text_input(T("Dossier de sauvegarde"), value=str(admi_data.get_backup_dir(db)))
+        if st.form_submit_button(T("Valider et enregistrer"), type="primary"):
+            ok, msg = admi_data.validate_backup_dir(chemin)
+            if ok:
+                admi_data.set_backup_dir(db, chemin)
+                st.success(msg)
+            else:
+                st.error(msg)
+
+    # R3 — sauvegarder
+    c1, c2 = st.columns(2)
+    if c1.button(T("💾 Sauvegarder maintenant"), key="bk_now", width="stretch"):
+        try:
+            p = admi_data.write_backup(db)
+            st.success(T("Sauvegarde créée :") + f" {p}")
+        except Exception as exc:  # noqa: BLE001
+            st.error(T("Échec de la sauvegarde :") + f" {exc}")
+    c2.download_button(
+        T("⬇ Télécharger une sauvegarde"),
+        json.dumps(admi_data.export_backup(db), ensure_ascii=False, indent=2).encode("utf-8"),
+        file_name=f"admi-backup-{datetime.now():%Y%m%d-%H%M%S}.json",
+        mime="application/json", width="stretch")
+
+    # R3 — restaurer (depuis le dossier ou un fichier importé)
+    backups = admi_data.list_backups(admi_data.get_backup_dir(db))
+    st.markdown(f'<div style="color:{THEME["muted"]}; font-size:11.5px; margin-top:8px">'
+                + T("Sauvegardes dans le dossier :") + f" {len(backups)}</div>",
+                unsafe_allow_html=True)
+    options = {p.name: p for p in backups}
+    choix = None
+    if options:
+        nom = st.selectbox(T("Restaurer depuis une sauvegarde du dossier"), list(options), key="bk_pick")
+        choix = options.get(nom)
+    up = st.file_uploader(T("…ou importer un fichier de sauvegarde"), type=["json"], key="bk_up")
+    if st.button(T("♻ Restaurer"), key="bk_restore"):
+        payload = None
+        try:
+            if up is not None:
+                payload = json.loads(up.getvalue().decode("utf-8"))
+            elif choix is not None:
+                payload = admi_data.read_backup(choix)
+        except Exception as exc:  # noqa: BLE001
+            st.error(T("Fichier illisible :") + f" {exc}")
+        if payload is None:
+            st.warning(T("Choisissez une sauvegarde du dossier ou importez un fichier."))
+        else:
+            try:
+                admi_data.backup_to_db(payload)   # valide le format avant la confirmation
+                st.session_state["restore_payload"] = payload
+                st.session_state["restore_dialog"] = True
+                st.rerun()
+            except ValueError as exc:
+                st.error(str(exc))
+
+    if st.session_state.get("restore_dialog"):
+        restore_dialog(db)
+
+
+def _settings_reseau(db):
+    """R1 — réseau / serveur : backend de base, concurrence, accès LAN."""
+    if not is_admin():
+        return
+    st.write("")
+    section_title("Réseau & serveur")
+    backend = dbmod.backend_label()
+    try:
+        port = st.get_option("server.port") or 8501
+    except Exception:  # noqa: BLE001
+        port = 8501
+    ip = "127.0.0.1"
+    try:
+        import socket
+        ip = socket.gethostbyname(socket.gethostname())
+    except Exception:  # noqa: BLE001
+        pass
+
+    st.markdown(
+        f'<div style="color:{THEME["muted2"]}; font-size:12.5px; line-height:1.7; margin-bottom:10px">'
+        + T("Base de données active :") + f' <b style="color:{THEME["accent"]}">{backend}</b><br>'
+        + T("Accès depuis le réseau local :")
+        + f' <b style="color:{THEME["accent2"]}">http://{ip}:{port}</b></div>',
+        unsafe_allow_html=True)
+
+    if backend == "PostgreSQL":
+        st.success(T("Base partagée PostgreSQL — adaptée à plusieurs utilisateurs simultanés."))
+    elif backend == "SQLite":
+        st.warning(T("Base SQLite (fichier local) : convient à un seul poste ou à quelques "
+                     "utilisateurs surtout en lecture. Pour plusieurs personnes qui saisissent "
+                     "en même temps, passez à PostgreSQL via la variable DATABASE_URL."))
+
+    st.caption(T("Pour servir l'application à toute l'équipe : lancez run_server.sh sur le serveur "
+                 "(ou streamlit run app.py --server.address 0.0.0.0 --server.port 8501 "
+                 "--server.headless true). Voir DEPLOIEMENT.md."))
 
 
 def _save_departements(db):

@@ -35,6 +35,16 @@ def _database_url() -> str:
     return "sqlite:///" + (DATA_DIR / "admi.db").as_posix()
 
 
+def backend_label(url: str | None = None) -> str:
+    """Nom lisible du moteur de base (PostgreSQL / SQLite / autre) pour l'UI."""
+    low = (url or _database_url()).lower()
+    if low.startswith("postgres"):
+        return "PostgreSQL"
+    if low.startswith("sqlite"):
+        return "SQLite"
+    return low.split(":", 1)[0] or "?"
+
+
 def _define_tables():
     if _tables:
         return

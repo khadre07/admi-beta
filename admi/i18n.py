@@ -362,6 +362,52 @@ _EN = {
         "This machine has reached its shutdown threshold — plan its shutdown or replacement.",
     "Reste avant seuil": "Remaining before threshold", "Dépassement": "Overrun",
     "prév.": "prev.", "corr.": "corr.",
+    # Stockage & sauvegarde (R2/R3)
+    "Stockage & sauvegarde": "Storage & backup",
+    "La base de données vit dans PostgreSQL / SQLite (DATABASE_URL). Le dossier "
+    "ci-dessous reçoit les fichiers de sauvegarde (admi-backup-*.json).":
+        "The database lives in PostgreSQL / SQLite (DATABASE_URL). The folder below "
+        "receives the backup files (admi-backup-*.json).",
+    "Sauvegarde restaurée — les données actuelles ont été remplacées.":
+        "Backup restored — the current data has been replaced.",
+    "Dossier de sauvegarde": "Backup folder",
+    "Valider et enregistrer": "Validate and save",
+    "💾 Sauvegarder maintenant": "💾 Back up now",
+    "Sauvegarde créée :": "Backup created:",
+    "Échec de la sauvegarde :": "Backup failed:",
+    "⬇ Télécharger une sauvegarde": "⬇ Download a backup",
+    "Sauvegardes dans le dossier :": "Backups in the folder:",
+    "Restaurer depuis une sauvegarde du dossier": "Restore from a backup in the folder",
+    "…ou importer un fichier de sauvegarde": "…or import a backup file",
+    "♻ Restaurer": "♻ Restore",
+    "Fichier illisible :": "Unreadable file:",
+    "Choisissez une sauvegarde du dossier ou importez un fichier.":
+        "Choose a backup from the folder or import a file.",
+    "La restauration REMPLACE toutes les données actuelles par celles de "
+    "la sauvegarde. Cette action est irréversible.":
+        "Restoring REPLACES all current data with the backup's. This cannot be undone.",
+    "Restaurer définitivement": "Restore permanently",
+    "La phrase ne correspond pas — rien n'a été restauré.":
+        "The phrase does not match — nothing was restored.",
+    "Échec de la restauration :": "Restore failed:",
+    # Réseau & serveur (R1)
+    "Réseau & serveur": "Network & server",
+    "Base de données active :": "Active database:",
+    "Accès depuis le réseau local :": "Access from the local network:",
+    "Base partagée PostgreSQL — adaptée à plusieurs utilisateurs simultanés.":
+        "Shared PostgreSQL database — suitable for several simultaneous users.",
+    "Base SQLite (fichier local) : convient à un seul poste ou à quelques "
+    "utilisateurs surtout en lecture. Pour plusieurs personnes qui saisissent "
+    "en même temps, passez à PostgreSQL via la variable DATABASE_URL.":
+        "SQLite database (local file): fine for a single workstation or a few "
+        "mostly-reading users. For several people entering data at the same time, "
+        "switch to PostgreSQL via the DATABASE_URL variable.",
+    "Pour servir l'application à toute l'équipe : lancez run_server.sh sur le serveur "
+    "(ou streamlit run app.py --server.address 0.0.0.0 --server.port 8501 "
+    "--server.headless true). Voir DEPLOIEMENT.md.":
+        "To serve the app to the whole team: run run_server.sh on the server "
+        "(or streamlit run app.py --server.address 0.0.0.0 --server.port 8501 "
+        "--server.headless true). See DEPLOIEMENT.md.",
     # Historique des pannes par machine
     "Historique des pannes par machine": "Breakdown history by machine",
     "Afficher tous les arrêts": "Show all stops", "Dernière panne": "Last breakdown",

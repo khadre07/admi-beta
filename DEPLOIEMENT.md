@@ -84,6 +84,47 @@ Déjà couvert : `dist/ADMI.app` (voir `README.md`). Build via
 
 ---
 
+## E. Plusieurs utilisateurs sur le réseau local (serveur partagé)
+
+AMI est une application web : **une seule instance** tourne sur un serveur (ou
+un poste qui reste allumé), et chaque personne s'y connecte avec son navigateur.
+Tous voient les mêmes données en temps réel — l'application recharge la base à
+chaque interaction et écrit chaque enregistrement de façon transactionnelle, donc
+deux saisies simultanées ne s'écrasent pas.
+
+1. **Base de données partagée (PostgreSQL recommandé).** Pour plusieurs personnes
+   qui saisissent en même temps, utilisez PostgreSQL plutôt que le fichier SQLite
+   par défaut :
+   ```bash
+   export DATABASE_URL="postgresql://admi:motdepasse@localhost:5432/admi"
+   ```
+   SQLite reste possible pour un petit nombre d'utilisateurs surtout en lecture.
+
+2. **Lancer le serveur :**
+   ```bash
+   export ADMI_DATA_DIR="/var/lib/admi"   # données + sauvegardes
+   ./run_server.sh                         # écoute sur 0.0.0.0:8501
+   ```
+   Les autres postes accèdent à **http://<ip-du-serveur>:8501**.
+   (Personnalisable : `ADMI_HOST`, `ADMI_PORT`.)
+
+3. **Vérifier dans l'app :** **Paramètres → Réseau & serveur** (admin) affiche la
+   base active, l'URL d'accès, et avertit si vous êtes en SQLite à plusieurs.
+
+### Sauvegarde & restauration
+**Paramètres → Stockage & sauvegarde** (admin) :
+- choisissez le **dossier de sauvegarde** (repli : `ADMI_DATA_DIR`) ;
+- « **Sauvegarder maintenant** » écrit un fichier `admi-backup-AAAAMMJJ-HHMMSS.json`
+  (ou téléchargez-le) ; une sauvegarde contient **toutes les tables + les réglages**,
+  indépendamment du moteur (SQLite ou PostgreSQL) ;
+- « **Restaurer** » recharge une sauvegarde (action **destructive**, confirmation
+  par recopie exigée).
+
+Pour un serveur, pensez à sauvegarder aussi PostgreSQL au niveau système
+(`pg_dump`) en complément des sauvegardes applicatives.
+
+---
+
 ## Notes communes
 - **Licence** : chaque installation demande un code (généré par `licgen`).
 - **Connexion & rôles** : `admin` / `admin` par défaut (à changer). Rôles

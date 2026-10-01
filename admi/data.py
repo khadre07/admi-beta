@@ -55,6 +55,94 @@ DATA_DIR = _data_dir()
 DATA_FILE = DATA_DIR / "admi_data.json"
 
 
+# ---------------------------------------------------------------------------
+# Dossier de sauvegarde (R2) — configurable, avec repli par défaut.
+# La base vit dans PostgreSQL/SQLite (DATABASE_URL) ; ce chemin ne sert qu'aux
+# fichiers de sauvegarde (admi-backup-*.json).
+# ---------------------------------------------------------------------------
+def resolve_backup_dir(configured: str | None, base: Path | None = None) -> Path:
+    """Chemin de sauvegarde effectif : le réglage s'il est renseigné, sinon
+    <base>/backups (base = dossier de données, qui respecte déjà ADMI_DATA_DIR)."""
+    base = base or DATA_DIR
+    if configured and str(configured).strip():
+        return Path(str(configured).strip()).expanduser()
+    return base / "backups"
+
+
+def validate_backup_dir(path: str) -> tuple[bool, str]:
+    """Vérifie qu'un dossier de sauvegarde est utilisable (créable + écriture)."""
+    try:
+        p = Path(str(path)).expanduser()
+        p.mkdir(parents=True, exist_ok=True)
+        if not p.is_dir():
+            return False, f"{p} n'est pas un dossier."
+        tmp = p / ".admi_write_test"
+        tmp.write_text("ok", encoding="utf-8")
+        tmp.unlink()
+        return True, f"Dossier de sauvegarde valide : {p}"
+    except Exception as exc:  # noqa: BLE001
+        return False, f"Dossier inutilisable : {exc}"
+
+
+def get_backup_dir(db: "Database") -> Path:
+    """Dossier de sauvegarde courant (réglage de l'app, ou repli par défaut)."""
+    configured = (db.settings.get("stockage") or {}).get("backupDir")
+    return resolve_backup_dir(configured)
+
+
+def set_backup_dir(db: "Database", path: str) -> None:
+    """Enregistre le dossier de sauvegarde dans les réglages (persisté)."""
+    db.settings.setdefault("stockage", {})["backupDir"] = str(path or "").strip()
+    save_settings(db)
+
+
+# ---------------------------------------------------------------------------
+# Sauvegarde / restauration (R3) — passe par la couche data, donc indépendant
+# du moteur (SQLite comme PostgreSQL). Une sauvegarde = toutes les tables + les
+# réglages dans un seul fichier JSON.
+# ---------------------------------------------------------------------------
+def export_backup(db: "Database") -> dict:
+    """Sérialise l'intégralité de l'état (tables + réglages) pour sauvegarde."""
+    return {"format": "admi-backup", "version": 1,
+            "exportedAt": datetime.now().isoformat(timespec="seconds"),
+            "data": db.to_dict()}
+
+
+def backup_to_db(payload: dict) -> "Database":
+    """Reconstruit une Database depuis une sauvegarde (valide le format)."""
+    if not isinstance(payload, dict) or payload.get("format") != "admi-backup":
+        raise ValueError("Fichier de sauvegarde AMI invalide ou non reconnu.")
+    return Database.from_dict(payload.get("data") or {})
+
+
+def restore_backup(db: "Database", payload: dict) -> "Database":
+    """Restaure une sauvegarde — DESTRUCTIF : remplace toutes les données."""
+    nouveau = backup_to_db(payload)
+    save_db(nouveau)
+    return nouveau
+
+
+def write_backup(db: "Database", directory=None) -> Path:
+    """Écrit une sauvegarde horodatée dans le dossier (ou celui des réglages)."""
+    directory = Path(directory) if directory else get_backup_dir(db)
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"admi-backup-{datetime.now():%Y%m%d-%H%M%S}.json"
+    path.write_text(json.dumps(export_backup(db), ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
+
+
+def list_backups(directory) -> list:
+    """Sauvegardes présentes dans un dossier, de la plus récente à la plus ancienne."""
+    directory = Path(directory)
+    if not directory.is_dir():
+        return []
+    return sorted(directory.glob("admi-backup-*.json"), reverse=True)
+
+
+def read_backup(path) -> dict:
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
 def uid() -> str:
     return "id" + uuid.uuid4().hex[:10]
 
