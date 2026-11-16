@@ -21,6 +21,11 @@ data/users.json
 # Secrets Streamlit (ne jamais committer les vraies valeurs)
 .streamlit/secrets.toml
 
+# Outillage local (skills Claude/Codex/..., installées via `npx skills`)
+.agents/
+.claude/
+skills-lock.json
+
 # Divers
 *.log
 .DS_Store
