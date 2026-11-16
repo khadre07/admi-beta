@@ -104,6 +104,20 @@ def get_db():
     return db
 
 
+@st.cache_data
+def _build_sha() -> str:
+    """SHA court du commit déployé, pour un repère visuel dans la sidebar."""
+    import subprocess
+    from pathlib import Path
+    root = Path(__file__).resolve().parent
+    try:
+        out = subprocess.check_output(["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
+                                      stderr=subprocess.DEVNULL, timeout=2)
+        return out.decode().strip()
+    except Exception:
+        return ""
+
+
 def _lang():
     return st.session_state.get("lang", "fr")
 
@@ -2124,6 +2138,9 @@ def main():
             st.session_state.user = None
             st.session_state.role = None
             st.rerun()
+        sha = _build_sha()
+        if sha:
+            st.caption(f"build `{sha}`")
 
     # Bannière de mise à jour (best-effort, vérifiée une fois par session)
     if "update_info" not in st.session_state:
