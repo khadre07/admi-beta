@@ -2294,9 +2294,13 @@ def render_login_screen():
                 st.session_state.user = res["username"]
                 st.session_state.role = res["role"]
                 st.session_state.booted = False
-                # Persiste la session dans l'URL : survit à un F5 / fermeture d'onglet.
+                # Persiste la session dans l'URL (si une clé de signature est
+                # configurée). Si pas de clé → pas de persistance, l'utilisateur
+                # devra se reconnecter après un F5 — c'est le fail-closed.
                 try:
-                    st.query_params["tok"] = auth.make_session_token(res["username"], res["role"])
+                    tok = auth.make_session_token(res["username"], res["role"])
+                    if tok:
+                        st.query_params["tok"] = tok
                 except Exception:
                     pass
                 st.rerun()
