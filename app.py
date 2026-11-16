@@ -1455,6 +1455,7 @@ def _settings_branding(db):
             "de connexion, dans la barre latérale et en en-tête des rapports PDF.")
         + "</div>", unsafe_allow_html=True)
 
+    import html as _html
     br = _branding_from_db(db)
     # Mémorise la saisie en cours pour la preview live (indépendante du formulaire).
     draft_name = st.session_state.get("brand_draft_name", br["company_name"])
@@ -1506,7 +1507,10 @@ def _settings_branding(db):
         st.write("")
         a1, a2 = st.columns(2)
         if a1.button(T("💾 Enregistrer"), type="primary", width="stretch", key="brand_save"):
-            payload = {"company_name": name.strip(), "domain": domain.strip(), "logo_png_b64": ""}
+            # Limites : évite un payload démesuré qui casserait la mise en page.
+            clean_name = name.strip()[:80]
+            clean_domain = domain.strip()[:120]
+            payload = {"company_name": clean_name, "domain": clean_domain, "logo_png_b64": ""}
             logo = st.session_state.get("brand_draft_logo")
             if logo:
                 payload["logo_png_b64"] = base64.b64encode(logo).decode("ascii")
@@ -1527,6 +1531,7 @@ def _settings_branding(db):
         st.markdown(f'<div style="font-size:10.5px; color:{THEME["muted"]}; text-transform:uppercase; '
                     f'font-weight:700; margin-bottom:6px">{T("Aperçu")}</div>', unsafe_allow_html=True)
         preview_name = (name or "").strip() or T("(Nom de l'entreprise)")
+        safe_name = _html.escape(preview_name)
         logo_html = ""
         logo_bytes = st.session_state.get("brand_draft_logo") or _branding_logo_bytes(br)
         if logo_bytes:
@@ -1540,7 +1545,7 @@ def _settings_branding(db):
             logo_html = (f'<div style="width:72px; height:72px; border-radius:12px; '
                          f'background:{THEME["accent"]}; color:#0A1220; display:flex; '
                          f'align-items:center; justify-content:center; font-family:Oswald, sans-serif; '
-                         f'font-weight:700; font-size:28px; letter-spacing:1px">{initials}</div>')
+                         f'font-weight:700; font-size:28px; letter-spacing:1px">{_html.escape(initials)}</div>')
 
         st.markdown(
             f'<div style="background:{THEME["panel"]}; border:1px solid {THEME["border"]}; '
@@ -1548,7 +1553,7 @@ def _settings_branding(db):
             f'{logo_html}'
             f'<div>'
             f'  <div style="font-family:Oswald, sans-serif; text-transform:uppercase; '
-            f'letter-spacing:1px; font-size:17px; color:{THEME["text"]}">{preview_name}</div>'
+            f'letter-spacing:1px; font-size:17px; color:{THEME["text"]}">{safe_name}</div>'
             f'  <div style="font-size:11.5px; color:{THEME["muted"]}; margin-top:4px">'
             f'    {T("Propulsé par AMI — Analyse de Maintenance Industrielle")}'
             f'  </div>'
@@ -2230,6 +2235,7 @@ def render_license_screen():
 def _branding_banner_html() -> str:
     """Petit bandeau 'Client — logo + nom' affiché si une marque est configurée."""
     import base64
+    import html as _html
     try:
         db_tmp = load_db()
         br = _branding_from_db(db_tmp)
@@ -2238,6 +2244,7 @@ def _branding_banner_html() -> str:
     name = (br.get("company_name") or "").strip()
     if not name:
         return ""
+    safe_name = _html.escape(name)
     logo_bytes = _branding_logo_bytes(br)
     if logo_bytes:
         b64 = base64.b64encode(logo_bytes).decode("ascii")
@@ -2249,13 +2256,13 @@ def _branding_banner_html() -> str:
         logo = (f'<div style="width:48px; height:48px; border-radius:10px; '
                 f'background:{THEME["accent"]}; color:#0A1220; display:flex; '
                 f'align-items:center; justify-content:center; font-family:Oswald, sans-serif; '
-                f'font-weight:700; font-size:20px; letter-spacing:1px">{initials}</div>')
+                f'font-weight:700; font-size:20px; letter-spacing:1px">{_html.escape(initials)}</div>')
     return (f'<div style="display:flex; justify-content:center; margin-top:14px">'
             f'  <div style="display:flex; align-items:center; gap:12px; background:{THEME["panel"]}; '
             f'    border:1px solid {THEME["border"]}; border-radius:12px; padding:10px 18px">'
             f'    {logo}'
             f'    <div style="font-family:Oswald, sans-serif; text-transform:uppercase; '
-            f'      letter-spacing:1px; font-size:15px; color:{THEME["text"]}">{name}</div>'
+            f'      letter-spacing:1px; font-size:15px; color:{THEME["text"]}">{safe_name}</div>'
             f'  </div>'
             f'</div>')
 
@@ -2328,6 +2335,8 @@ def main():
         _br_name = (_br.get("company_name") or "").strip()
         if _br_name:
             import base64 as _b64
+            import html as _html
+            _safe_br_name = _html.escape(_br_name)
             _logo = _branding_logo_bytes(_br)
             if _logo:
                 _img_b64 = _b64.b64encode(_logo).decode("ascii")
@@ -2339,14 +2348,15 @@ def main():
                 _logo_html = (f'<div style="width:28px; height:28px; border-radius:7px; '
                               f'background:{THEME["accent"]}; color:#0A1220; display:flex; '
                               f'align-items:center; justify-content:center; '
-                              f'font-family:Oswald, sans-serif; font-weight:700; font-size:13px">{_ini}</div>')
+                              f'font-family:Oswald, sans-serif; font-weight:700; '
+                              f'font-size:13px">{_html.escape(_ini)}</div>')
             st.markdown(
                 f'<div style="display:flex; align-items:center; gap:10px; '
                 f'margin:10px 0 4px 0; padding:8px 10px; '
                 f'border:1px solid {THEME["border"]}; border-radius:10px; background:{THEME["panel"]}">'
                 f'  {_logo_html}'
                 f'  <div style="font-family:Oswald, sans-serif; text-transform:uppercase; '
-                f'    letter-spacing:.5px; font-size:12.5px; color:{THEME["text"]}">{_br_name}</div>'
+                f'    letter-spacing:.5px; font-size:12.5px; color:{THEME["text"]}">{_safe_br_name}</div>'
                 f'</div>', unsafe_allow_html=True)
         st.write("")
         # key="nav_choice" : permet aux raccourcis internes (bandeau de stock…)
