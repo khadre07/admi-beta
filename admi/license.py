@@ -10,13 +10,29 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import secrets
 
 from .data import DATA_DIR
 
-# Clé secrète intégrée (partagée avec licgen). Pour un vrai déploiement,
-# remplacez-la par votre propre valeur et gardez-la confidentielle.
-_SECRET = b"ADMI-industrial-maintenance-2026-license-signing-key-\x9f\x12\xab"
+_DEFAULT_SECRET = b"ADMI-industrial-maintenance-2026-license-signing-key-\x9f\x12\xab"
+
+
+def _load_secret() -> bytes:
+    env = os.environ.get("ADMI_LICENSE_SECRET")
+    if env:
+        return env.encode("utf-8")
+    try:
+        import streamlit as st  # type: ignore
+        val = st.secrets.get("ADMI_LICENSE_SECRET") if hasattr(st, "secrets") else None
+        if val:
+            return str(val).encode("utf-8")
+    except Exception:
+        pass
+    return _DEFAULT_SECRET
+
+
+_SECRET = _load_secret()
 LIC_FILE = DATA_DIR / "license.json"
 
 
@@ -63,7 +79,24 @@ def activate(code: str, name: str = "") -> bool:
     return True
 
 
+def _env_license_code() -> str:
+    code = os.environ.get("ADMI_LICENSE_CODE")
+    if code:
+        return code
+    try:
+        import streamlit as st  # type: ignore
+        val = st.secrets.get("ADMI_LICENSE_CODE") if hasattr(st, "secrets") else None
+        if val:
+            return str(val)
+    except Exception:
+        pass
+    return ""
+
+
 def stored_license():
+    code = _env_license_code()
+    if code and verify_license(code):
+        return {"code": code.strip().upper(), "name": "env"}
     try:
         d = json.loads(LIC_FILE.read_text(encoding="utf-8"))
         if verify_license(d.get("code", "")):

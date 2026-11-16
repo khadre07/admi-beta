@@ -18,6 +18,9 @@ data/*.migrated
 data/license.json
 data/users.json
 
+# Secrets Streamlit (ne jamais committer les vraies valeurs)
+.streamlit/secrets.toml
+
 # Divers
 *.log
 .DS_Store
