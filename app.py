@@ -1388,8 +1388,10 @@ def _settings_objectifs(db):
 
 
 def _fetch_company_logo(domain: str, timeout: float = 5.0):
-    """Récupère le logo d'une entreprise via Clearbit Logo API (gratuit, sans clé).
+    """Récupère le logo d'une entreprise via Google Favicon API (gratuit, sans clé).
 
+    Essaie plusieurs tailles (256, 128, 64) : si le favicon du site n'existe qu'en
+    petite taille, Google rétrograde silencieusement — on prend ce qu'on peut.
     Retourne (bytes_png, None) si OK, sinon (None, message_erreur).
     """
     import urllib.request
@@ -1403,20 +1405,24 @@ def _fetch_company_logo(domain: str, timeout: float = 5.0):
     if not domain or "." not in domain:
         return None, T("Entrez un domaine valide (ex : acme.com)")
 
-    url = f"https://logo.clearbit.com/{domain}"
-    req = urllib.request.Request(url, headers={"User-Agent": "AMI/1.0"})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            data = r.read()
-    except urllib.error.HTTPError as exc:
-        if exc.code == 404:
-            return None, T("Aucun logo trouvé pour ce domaine.")
-        return None, T("Erreur HTTP") + f" {exc.code}"
-    except Exception as exc:  # noqa: BLE001
-        return None, T("Impossible de contacter le service de logo :") + f" {exc}"
-    if len(data) < 100 or len(data) > 2_000_000:
-        return None, T("Image inattendue (taille hors limites).")
-    return data, None
+    last_err = None
+    for size in (256, 128, 64):
+        url = f"https://www.google.com/s2/favicons?domain={domain}&sz={size}"
+        req = urllib.request.Request(url, headers={"User-Agent": "AMI/1.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                data = r.read()
+        except urllib.error.HTTPError as exc:
+            last_err = f"HTTP {exc.code}"
+            continue
+        except Exception as exc:  # noqa: BLE001
+            last_err = str(exc)[:80]
+            continue
+        # Google renvoie 1x1 PNG générique quand il n'a rien — on refuse.
+        if 300 < len(data) < 2_000_000:
+            return data, None
+        last_err = T("Aucun logo trouvé pour ce domaine.")
+    return None, (last_err or T("Impossible de récupérer le logo."))
 
 
 def _branding_from_db(db) -> dict:
