@@ -65,12 +65,18 @@ def _dept_rows(arrets, intervs, energie):
 def build_html_report(db, periode, annee, mois, dept) -> bytes:
     k, arrets, intervs, energie = _gather(db, periode, annee, mois, dept)
 
+    # Rapport « Tous départements » : on montre explicitement chaque département
+    # (même ceux sans données) pour que le lecteur voie la couverture complète.
+    all_depts = (dept == "all")
     figs = [
         ("Disponibilité", charts.gauge_disponibilite(k["disponibilite"])),
         ("Temps d'arrêt par département (h)", charts.bar_arrets_by_dept(kpis.arrets_by_dept(arrets))),
-        ("Répartition du coût de maintenance", charts.donut_cout_by_dept(kpis.cout_by_dept(intervs))),
-        ("Énergie par département (kWh)", charts.bar_energie_by_dept(kpis.energie_by_dept(energie))),
-        ("Interventions préventif / correctif", charts.grouped_interv_prevcorr(kpis.interv_prev_corr_by_dept(intervs))),
+        ("Répartition du coût de maintenance",
+         charts.donut_cout_by_dept(kpis.cout_by_dept(intervs), include_empty=all_depts)),
+        ("Énergie par département (kWh)",
+         charts.bar_energie_by_dept(kpis.energie_by_dept(energie), include_empty=all_depts)),
+        ("Interventions préventif / correctif",
+         charts.grouped_interv_prevcorr(kpis.interv_prev_corr_by_dept(intervs), include_empty=all_depts)),
         ("Tendance de disponibilité (%)", charts.line_trend(kpis.yearly_trend(db, dept), "disponibilite")),
     ]
     chart_html = []

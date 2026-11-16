@@ -141,16 +141,16 @@ def _donut(courts, noms, vals, cols, unite: str, height: int):
                      margin=dict(l=90, r=90, t=20, b=20))
 
 
-def donut_cout_by_dept(agg: dict, height: int = 260):
-    courts, noms, vals, cols = _dept_series(agg)
-    if not vals:
+def donut_cout_by_dept(agg: dict, height: int = 260, include_empty: bool = False):
+    courts, noms, vals, cols = _dept_series(agg, only_positive=not include_empty)
+    if not vals or (include_empty and sum(vals) == 0):
         return _empty("Ajoutez des rapports d'intervention pour voir la répartition des coûts.", height)
     return _donut(courts, noms, vals, cols, "FCFA", height)
 
 
-def bar_energie_by_dept(agg: dict, height: int = 260):
-    courts, noms, vals, cols = _dept_series(agg)
-    if not vals:
+def bar_energie_by_dept(agg: dict, height: int = 260, include_empty: bool = False):
+    courts, noms, vals, cols = _dept_series(agg, only_positive=not include_empty)
+    if not vals or (include_empty and sum(vals) == 0):
         return _empty("Saisissez ou importez la consommation énergétique.", height)
     fig = go.Figure(go.Bar(
         x=courts, y=vals, marker_color=cols, customdata=noms,
@@ -190,15 +190,15 @@ def stacked_energie_mensuelle(energie_annee: list, dept: str, height: int = 320)
                      legend=dict(orientation="h", y=-0.12, x=0.5, xanchor="center", font=dict(size=10)))
 
 
-def grouped_interv_prevcorr(agg: dict, height: int = 320):
+def grouped_interv_prevcorr(agg: dict, height: int = 320, include_empty: bool = False):
     """agg = {deptId: (preventif, correctif)}."""
     courts, prev, corr = [], [], []
     for d in DEPARTEMENTS:
         p, c = agg.get(d["id"], (0, 0))
-        if p + c == 0:
+        if not include_empty and p + c == 0:
             continue
         courts.append(d["court"]); prev.append(p); corr.append(c)
-    if not courts:
+    if not courts or (include_empty and sum(prev) + sum(corr) == 0):
         return _empty("Ajoutez des rapports d'intervention pour cette période.", height)
     fig = go.Figure()
     fig.add_bar(x=courts, y=prev, name=i18n.type_label("Préventif"), marker_color=THEME["success"],
