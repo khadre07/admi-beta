@@ -163,3 +163,66 @@ def delete_user(username: str) -> tuple[bool, str]:
 
 def _count_admins(users: dict) -> int:
     return sum(1 for u in users.values() if u.get("role") == "admin")
+
+
+# ---------------------------------------------------------------------------
+# Jetons de session (persistance à travers les rafraîchissements de page)
+# ---------------------------------------------------------------------------
+#
+# Streamlit perd `st.session_state` à chaque reload. Pour éviter que le client
+# soit déconnecté quand il fait F5, on écrit un jeton signé HMAC dans l'URL
+# (`?tok=…`). Au prochain chargement, l'app relit le jeton, vérifie la signature
+# et restaure la session. Le jeton expire au bout de 7 jours.
+#
+# ⚠️ Compromis : ce jeton est dans l'URL ; partager le lien équivaut à partager
+# la session. Acceptable pour une beta à 5 utilisateurs de confiance ; en prod
+# on bougerait vers un cookie HttpOnly.
+import base64 as _b64
+import time as _time
+
+_SESSION_TTL = 7 * 24 * 3600
+
+
+def _session_secret() -> bytes:
+    """Récupère la clé HMAC utilisée pour signer les jetons (ADMI_LICENSE_SECRET)."""
+    try:
+        from . import license as _lic
+        return _lic._SECRET
+    except Exception:
+        return b"fallback-session-secret-change-me"
+
+
+def make_session_token(username: str, role: str, ttl: int = _SESSION_TTL) -> str:
+    exp = int(_time.time()) + int(ttl)
+    body = json.dumps({"u": username, "r": role, "e": exp}, separators=(",", ":")).encode("utf-8")
+    body_b64 = _b64.urlsafe_b64encode(body).decode("ascii").rstrip("=")
+    sig = hmac.new(_session_secret(), body_b64.encode("ascii"), hashlib.sha256).hexdigest()[:24]
+    return f"{body_b64}.{sig}"
+
+
+def read_session_token(token: str):
+    """Retourne {'u','r','e'} si le jeton est signé et non expiré, sinon None."""
+    if not token or "." not in token:
+        return None
+    try:
+        body_b64, sig = token.rsplit(".", 1)
+    except ValueError:
+        return None
+    expected = hmac.new(_session_secret(), body_b64.encode("ascii"), hashlib.sha256).hexdigest()[:24]
+    if not hmac.compare_digest(sig, expected):
+        return None
+    try:
+        pad = "=" * ((4 - len(body_b64) % 4) % 4)
+        payload = json.loads(_b64.urlsafe_b64decode(body_b64 + pad).decode("utf-8"))
+    except Exception:
+        return None
+    if int(payload.get("e", 0)) < _time.time():
+        return None
+    # Vérifie que l'utilisateur existe toujours : si l'admin a supprimé/renommé
+    # le compte, le jeton devient invalide.
+    try:
+        if payload.get("u") not in _load():
+            return None
+    except Exception:
+        return None
+    return payload

@@ -2276,11 +2276,12 @@ def _branding_banner_html() -> str:
 def render_login_screen():
     _hide_chrome_css()
     _lang_toggle()
-    st.markdown(f'<div style="display:flex;justify-content:center;margin-top:2vh">{logo_block("Connexion")}</div>',
-                unsafe_allow_html=True)
+    # Logo client AU-DESSUS du logo AMI (si configuré).
     banner = _branding_banner_html()
     if banner:
         st.markdown(banner, unsafe_allow_html=True)
+    st.markdown(f'<div style="display:flex;justify-content:center;margin-top:2vh">{logo_block("Connexion")}</div>',
+                unsafe_allow_html=True)
     col = st.columns([1, 1.25, 1])[1]
     en = _lang() == "en"
     with col:
@@ -2293,6 +2294,11 @@ def render_login_screen():
                 st.session_state.user = res["username"]
                 st.session_state.role = res["role"]
                 st.session_state.booted = False
+                # Persiste la session dans l'URL : survit à un F5 / fermeture d'onglet.
+                try:
+                    st.query_params["tok"] = auth.make_session_token(res["username"], res["role"])
+                except Exception:
+                    pass
                 st.rerun()
             else:
                 st.error("Wrong username or password." if en else "Identifiant ou mot de passe incorrect.")
@@ -2307,6 +2313,19 @@ def main():
     if not os.environ.get("ADMI_SKIP_LICENSE") and not lic.is_activated():
         render_license_screen()
         return
+
+    # Auto-login depuis un jeton signé stocké dans l'URL : survit à un F5.
+    if not st.session_state.get("user"):
+        try:
+            tok = st.query_params.get("tok", "")
+        except Exception:
+            tok = ""
+        if tok:
+            data = auth.read_session_token(tok)
+            if data:
+                st.session_state.user = data["u"]
+                st.session_state.role = data["r"]
+
     if not st.session_state.get("user"):
         render_login_screen()
         return
@@ -2324,6 +2343,41 @@ def main():
     if not st.session_state.get("_usage_checked"):
         check_machine_usage_alerts(db)
         st.session_state["_usage_checked"] = True
+
+    # Bandeau client en haut de page (logo + nom) si configuré en Paramètres.
+    _br = _branding_from_db(db)
+    _br_name = (_br.get("company_name") or "").strip()
+    if _br_name:
+        import base64 as _b64
+        import html as _html
+        _safe = _html.escape(_br_name)
+        _logo_bytes = _branding_logo_bytes(_br)
+        if _logo_bytes:
+            _img_b64 = _b64.b64encode(_logo_bytes).decode("ascii")
+            _top_logo = (f'<img src="data:image/png;base64,{_img_b64}" '
+                         f'style="max-height:40px; max-width:140px; object-fit:contain; '
+                         f'background:#fff; border-radius:8px; padding:4px"/>')
+        else:
+            _ini = "".join(p[0] for p in _br_name.split()[:2]).upper() or "?"
+            _top_logo = (f'<div style="width:40px; height:40px; border-radius:9px; '
+                         f'background:{THEME["accent"]}; color:#0A1220; display:flex; '
+                         f'align-items:center; justify-content:center; font-family:Oswald, sans-serif; '
+                         f'font-weight:700; font-size:17px">{_html.escape(_ini)}</div>')
+        st.markdown(
+            f'<div style="display:flex; align-items:center; gap:14px; '
+            f'padding:10px 16px; margin:0 0 14px 0; '
+            f'background:linear-gradient(90deg, {THEME["panel"]}, {THEME["panel2"]}); '
+            f'border:1px solid {THEME["border"]}; border-radius:12px">'
+            f'  {_top_logo}'
+            f'  <div style="flex:1">'
+            f'    <div style="font-family:Oswald, sans-serif; text-transform:uppercase; '
+            f'      letter-spacing:1px; font-size:16px; color:{THEME["text"]}">{_safe}</div>'
+            f'    <div style="font-size:11px; color:{THEME["muted"]}; margin-top:2px">'
+            f'      AMI — {T("Analyse de Maintenance Industrielle")}'
+            f'    </div>'
+            f'  </div>'
+            f'</div>', unsafe_allow_html=True)
+
     SECTIONS, SUBTITLES = _nav()
     lbl = {"en": "Machines: {m} · stops: {a} · interventions: {i}",
            "fr": "{m} machines · {a} arrêts · {i} interventions"}[_lang()]
@@ -2385,6 +2439,11 @@ def main():
         if st.button(T("Se déconnecter"), width="stretch"):
             st.session_state.user = None
             st.session_state.role = None
+            try:
+                if "tok" in st.query_params:
+                    del st.query_params["tok"]
+            except Exception:
+                pass
             st.rerun()
         sha = _build_sha()
         if sha:
