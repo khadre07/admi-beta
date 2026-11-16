@@ -972,6 +972,7 @@ def view_settings(db):
             save_settings(db)
             st.success("Horaires enregistrés — la disponibilité, le MTBF et le MTTR en tiennent compte.")
 
+    _settings_branding(db)
     _settings_objectifs(db)
     _settings_departements(db)
     _settings_donnees(db)
@@ -1384,6 +1385,177 @@ def _settings_objectifs(db):
                 db.settings["objectifs"] = objectifs
                 save_settings(db)
                 st.success("Objectifs enregistrés — ils apparaissent sous les indicateurs du tableau de bord.")
+
+
+def _fetch_company_logo(domain: str, timeout: float = 5.0):
+    """Récupère le logo d'une entreprise via Clearbit Logo API (gratuit, sans clé).
+
+    Retourne (bytes_png, None) si OK, sinon (None, message_erreur).
+    """
+    import urllib.request
+    import urllib.error
+
+    domain = (domain or "").strip().lower()
+    for prefix in ("https://", "http://"):
+        if domain.startswith(prefix):
+            domain = domain[len(prefix):]
+    domain = domain.split("/", 1)[0].strip()
+    if not domain or "." not in domain:
+        return None, T("Entrez un domaine valide (ex : acme.com)")
+
+    url = f"https://logo.clearbit.com/{domain}"
+    req = urllib.request.Request(url, headers={"User-Agent": "AMI/1.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = r.read()
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None, T("Aucun logo trouvé pour ce domaine.")
+        return None, T("Erreur HTTP") + f" {exc.code}"
+    except Exception as exc:  # noqa: BLE001
+        return None, T("Impossible de contacter le service de logo :") + f" {exc}"
+    if len(data) < 100 or len(data) > 2_000_000:
+        return None, T("Image inattendue (taille hors limites).")
+    return data, None
+
+
+def _branding_from_db(db) -> dict:
+    """Lit la configuration branding (nom, domaine, logo base64) depuis la DB."""
+    br = db.settings.get("branding") or {}
+    return {
+        "company_name": (br.get("company_name") or "").strip(),
+        "domain": (br.get("domain") or "").strip(),
+        "logo_png_b64": br.get("logo_png_b64") or "",
+    }
+
+
+def _branding_logo_bytes(br: dict) -> bytes | None:
+    import base64
+    b64 = (br or {}).get("logo_png_b64") or ""
+    if not b64:
+        return None
+    try:
+        return base64.b64decode(b64)
+    except Exception:
+        return None
+
+
+def _settings_branding(db):
+    """Permet au client d'afficher son nom et son logo partout dans l'app."""
+    if not is_admin():
+        return
+    import base64
+
+    st.write("")
+    section_title(T("Marque de l'entreprise"))
+    st.markdown(
+        f'<div style="color:{THEME["muted2"]}; font-size:12.5px; line-height:1.6; margin-bottom:12px">'
+        + T("Personnalise l'app avec le nom et le logo de l'entreprise. Le logo est récupéré "
+            "automatiquement si tu renseignes le site web (ex : acme.com). Il s'affiche sur l'écran "
+            "de connexion, dans la barre latérale et en en-tête des rapports PDF.")
+        + "</div>", unsafe_allow_html=True)
+
+    br = _branding_from_db(db)
+    # Mémorise la saisie en cours pour la preview live (indépendante du formulaire).
+    draft_name = st.session_state.get("brand_draft_name", br["company_name"])
+    draft_domain = st.session_state.get("brand_draft_domain", br["domain"])
+    draft_logo_bytes = st.session_state.get("brand_draft_logo") or _branding_logo_bytes(br)
+
+    left, right = st.columns([1.1, 1], gap="large")
+
+    # --- Formulaire ---------------------------------------------------------
+    with left:
+        name = st.text_input(T("Nom de l'entreprise"), value=draft_name,
+                              placeholder=T("Ex : ACME Industries"), key="brand_name_input")
+        domain = st.text_input(T("Site web (pour récupérer le logo)"),
+                                value=draft_domain, placeholder="acme.com",
+                                key="brand_domain_input",
+                                help=T("Juste le domaine, sans http:// ni www. Laisse vide pour sans logo."))
+        st.session_state["brand_draft_name"] = name
+        st.session_state["brand_draft_domain"] = domain
+
+        bc1, bc2 = st.columns(2)
+        if bc1.button(T("🔎 Récupérer le logo"), width="stretch", key="brand_fetch"):
+            if not domain:
+                st.warning(T("Renseigne d'abord le site web."))
+            else:
+                with st.spinner(T("Recherche du logo…")):
+                    data, err = _fetch_company_logo(domain)
+                if err:
+                    st.error(err)
+                else:
+                    st.session_state["brand_draft_logo"] = data
+                    st.success(T("Logo récupéré — vérifie la preview à droite."))
+                    st.rerun()
+
+        up = st.file_uploader(T("…ou importer un logo (PNG, JPG, SVG — max 2 Mo)"),
+                              type=["png", "jpg", "jpeg", "svg"], key="brand_upload")
+        if up is not None and st.session_state.get("brand_upload_last") != up.name:
+            data = up.getvalue()
+            if len(data) > 2_000_000:
+                st.error(T("Image trop grosse (>2 Mo)."))
+            else:
+                st.session_state["brand_draft_logo"] = data
+                st.session_state["brand_upload_last"] = up.name
+                st.rerun()
+
+        if bc2.button(T("🗑 Retirer le logo"), width="stretch", key="brand_clear_logo"):
+            st.session_state["brand_draft_logo"] = None
+            st.rerun()
+
+        st.write("")
+        a1, a2 = st.columns(2)
+        if a1.button(T("💾 Enregistrer"), type="primary", width="stretch", key="brand_save"):
+            payload = {"company_name": name.strip(), "domain": domain.strip(), "logo_png_b64": ""}
+            logo = st.session_state.get("brand_draft_logo")
+            if logo:
+                payload["logo_png_b64"] = base64.b64encode(logo).decode("ascii")
+            db.settings["branding"] = payload
+            save_settings(db)
+            # Nettoie les drafts, la prochaine ouverture lit la BDD.
+            for k in ("brand_draft_name", "brand_draft_domain", "brand_draft_logo", "brand_upload_last"):
+                st.session_state.pop(k, None)
+            st.success(T("Marque enregistrée — visible dès le prochain rafraîchissement."))
+            st.rerun()
+        if a2.button(T("Annuler"), width="stretch", key="brand_cancel"):
+            for k in ("brand_draft_name", "brand_draft_domain", "brand_draft_logo", "brand_upload_last"):
+                st.session_state.pop(k, None)
+            st.rerun()
+
+    # --- Preview live -------------------------------------------------------
+    with right:
+        st.markdown(f'<div style="font-size:10.5px; color:{THEME["muted"]}; text-transform:uppercase; '
+                    f'font-weight:700; margin-bottom:6px">{T("Aperçu")}</div>', unsafe_allow_html=True)
+        preview_name = (name or "").strip() or T("(Nom de l'entreprise)")
+        logo_html = ""
+        logo_bytes = st.session_state.get("brand_draft_logo") or _branding_logo_bytes(br)
+        if logo_bytes:
+            b64 = base64.b64encode(logo_bytes).decode("ascii")
+            logo_html = (f'<img src="data:image/png;base64,{b64}" '
+                         f'style="max-height:72px; max-width:160px; object-fit:contain; '
+                         f'background:#fff; border-radius:8px; padding:6px"/>')
+        else:
+            # Placeholder : initiales sur fond accent
+            initials = "".join(p[0] for p in preview_name.split()[:2]).upper() or "?"
+            logo_html = (f'<div style="width:72px; height:72px; border-radius:12px; '
+                         f'background:{THEME["accent"]}; color:#0A1220; display:flex; '
+                         f'align-items:center; justify-content:center; font-family:Oswald, sans-serif; '
+                         f'font-weight:700; font-size:28px; letter-spacing:1px">{initials}</div>')
+
+        st.markdown(
+            f'<div style="background:{THEME["panel"]}; border:1px solid {THEME["border"]}; '
+            f'border-radius:14px; padding:18px; display:flex; align-items:center; gap:16px">'
+            f'{logo_html}'
+            f'<div>'
+            f'  <div style="font-family:Oswald, sans-serif; text-transform:uppercase; '
+            f'letter-spacing:1px; font-size:17px; color:{THEME["text"]}">{preview_name}</div>'
+            f'  <div style="font-size:11.5px; color:{THEME["muted"]}; margin-top:4px">'
+            f'    {T("Propulsé par AMI — Analyse de Maintenance Industrielle")}'
+            f'  </div>'
+            f'</div>'
+            f'</div>', unsafe_allow_html=True)
+
+        st.caption(T("La marque apparaît aussi dans la barre latérale et sur l'écran de connexion."))
 
 
 # ---------------------------------------------------------------------------
@@ -2055,11 +2227,47 @@ def render_license_screen():
                 st.error("Invalid license code." if en else "Code de licence invalide. Vérifiez la saisie.")
 
 
+def _branding_banner_html() -> str:
+    """Petit bandeau 'Client — logo + nom' affiché si une marque est configurée."""
+    import base64
+    try:
+        db_tmp = load_db()
+        br = _branding_from_db(db_tmp)
+    except Exception:
+        return ""
+    name = (br.get("company_name") or "").strip()
+    if not name:
+        return ""
+    logo_bytes = _branding_logo_bytes(br)
+    if logo_bytes:
+        b64 = base64.b64encode(logo_bytes).decode("ascii")
+        logo = (f'<img src="data:image/png;base64,{b64}" '
+                f'style="max-height:48px; max-width:120px; object-fit:contain; '
+                f'background:#fff; border-radius:8px; padding:4px"/>')
+    else:
+        initials = "".join(p[0] for p in name.split()[:2]).upper() or "?"
+        logo = (f'<div style="width:48px; height:48px; border-radius:10px; '
+                f'background:{THEME["accent"]}; color:#0A1220; display:flex; '
+                f'align-items:center; justify-content:center; font-family:Oswald, sans-serif; '
+                f'font-weight:700; font-size:20px; letter-spacing:1px">{initials}</div>')
+    return (f'<div style="display:flex; justify-content:center; margin-top:14px">'
+            f'  <div style="display:flex; align-items:center; gap:12px; background:{THEME["panel"]}; '
+            f'    border:1px solid {THEME["border"]}; border-radius:12px; padding:10px 18px">'
+            f'    {logo}'
+            f'    <div style="font-family:Oswald, sans-serif; text-transform:uppercase; '
+            f'      letter-spacing:1px; font-size:15px; color:{THEME["text"]}">{name}</div>'
+            f'  </div>'
+            f'</div>')
+
+
 def render_login_screen():
     _hide_chrome_css()
     _lang_toggle()
     st.markdown(f'<div style="display:flex;justify-content:center;margin-top:2vh">{logo_block("Connexion")}</div>',
                 unsafe_allow_html=True)
+    banner = _branding_banner_html()
+    if banner:
+        st.markdown(banner, unsafe_allow_html=True)
     col = st.columns([1, 1.25, 1])[1]
     en = _lang() == "en"
     with col:
@@ -2116,6 +2324,30 @@ def main():
         st.markdown('<div class="admi-brand">' + logo_svg(34) + 'AMI</div>'
                     + f'<div class="admi-sub" style="margin-left:43px">{T("Analyse de Maintenance Industrielle")}</div>',
                     unsafe_allow_html=True)
+        _br = _branding_from_db(db)
+        _br_name = (_br.get("company_name") or "").strip()
+        if _br_name:
+            import base64 as _b64
+            _logo = _branding_logo_bytes(_br)
+            if _logo:
+                _img_b64 = _b64.b64encode(_logo).decode("ascii")
+                _logo_html = (f'<img src="data:image/png;base64,{_img_b64}" '
+                              f'style="max-height:28px; max-width:70px; object-fit:contain; '
+                              f'background:#fff; border-radius:6px; padding:3px"/>')
+            else:
+                _ini = "".join(p[0] for p in _br_name.split()[:2]).upper() or "?"
+                _logo_html = (f'<div style="width:28px; height:28px; border-radius:7px; '
+                              f'background:{THEME["accent"]}; color:#0A1220; display:flex; '
+                              f'align-items:center; justify-content:center; '
+                              f'font-family:Oswald, sans-serif; font-weight:700; font-size:13px">{_ini}</div>')
+            st.markdown(
+                f'<div style="display:flex; align-items:center; gap:10px; '
+                f'margin:10px 0 4px 0; padding:8px 10px; '
+                f'border:1px solid {THEME["border"]}; border-radius:10px; background:{THEME["panel"]}">'
+                f'  {_logo_html}'
+                f'  <div style="font-family:Oswald, sans-serif; text-transform:uppercase; '
+                f'    letter-spacing:.5px; font-size:12.5px; color:{THEME["text"]}">{_br_name}</div>'
+                f'</div>', unsafe_allow_html=True)
         st.write("")
         # key="nav_choice" : permet aux raccourcis internes (bandeau de stock…)
         # de pointer une autre section avant le rerun.
