@@ -29,29 +29,28 @@ _SETTINGS_KEY = "users"
 
 
 def _save(users: dict) -> None:
-    try:
-        from . import db
-        db.set_setting(_SETTINGS_KEY, users)
-        return
-    except Exception:
-        pass
-    USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    USERS_FILE.write_text(json.dumps(users), encoding="utf-8")
+    """Écrit les comptes dans la base. Les erreurs remontent — pas de fallback
+    silencieux : si la révocation d'un compte échoue, l'appelant doit le savoir.
+    """
+    from . import db
+    db.set_setting(_SETTINGS_KEY, users)
 
 
-def _load_from_db() -> dict | None:
-    try:
-        from . import db
-        s = db.get_settings()
-        u = s.get(_SETTINGS_KEY)
-        if isinstance(u, dict) and u:
-            return u
-    except Exception:
-        return None
+def _read_users_from_db() -> dict | None:
+    """Lit la ligne `users` depuis la base. Retourne None si la ligne n'existe
+    pas (1er démarrage). Les erreurs de connexion/BDD **remontent** : on ne
+    confond jamais « DB en panne » avec « 1er démarrage » (sinon on recréerait
+    admin/admin par-dessus les vrais comptes).
+    """
+    from . import db
+    s = db.get_settings()
+    u = s.get(_SETTINGS_KEY)
+    if isinstance(u, dict) and u:
+        return u
     return None
 
 
-def _load_from_file() -> dict | None:
+def _load_legacy_file() -> dict | None:
     if USERS_FILE.exists():
         try:
             return json.loads(USERS_FILE.read_text(encoding="utf-8"))
@@ -60,18 +59,32 @@ def _load_from_file() -> dict | None:
     return None
 
 
+def _mark_legacy_migrated() -> None:
+    """Renomme users.json en users.json.migrated pour qu'il ne soit plus rechargé."""
+    if USERS_FILE.exists():
+        try:
+            USERS_FILE.rename(USERS_FILE.with_suffix(USERS_FILE.suffix + ".migrated"))
+        except Exception:
+            pass
+
+
 def _load() -> dict:
-    users = _load_from_db()
+    users = _read_users_from_db()   # peut lever ; on NE ré-initialise pas en silence
+
     if users is None:
-        # 1er démarrage : migre un ancien fichier local s'il existe, sinon crée admin/admin.
-        users = _load_from_file()
-        if users is None:
-            salt = os.urandom(16)
-            users = {"admin": {"salt": salt.hex(), "hash": _hash("admin", salt), "role": "admin"}}
+        # 1er démarrage (DB OK mais aucune ligne users) : migre l'éventuel
+        # fichier local, sinon crée admin/admin.
+        legacy = _load_legacy_file()
+        if legacy is not None:
+            _save(legacy)
+            _mark_legacy_migrated()
+            return legacy
+        salt = os.urandom(16)
+        users = {"admin": {"salt": salt.hex(), "hash": _hash("admin", salt), "role": "admin"}}
         _save(users)
         return users
 
-    # migration : anciens comptes sans rôle -> admin
+    # DB OK et une ligne existe : migration des rôles le cas échéant, puis renvoi.
     changed = False
     for u in users.values():
         if "role" not in u:
@@ -79,6 +92,7 @@ def _load() -> dict:
             changed = True
     if changed:
         _save(users)
+    _mark_legacy_migrated()
     return users
 
 

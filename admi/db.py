@@ -99,15 +99,17 @@ def replace_all(name: str, recs: list) -> None:
 
 
 def get_settings() -> dict:
+    eng = engine()
     t = _tables["settings"]
-    with engine().connect() as c:
+    with eng.connect() as c:
         rows = c.execute(select(t.c.skey, t.c.value)).fetchall()
     return {k: v for k, v in rows}
 
 
 def set_setting(key: str, value) -> None:
+    eng = engine()
     t = _tables["settings"]
-    with engine().begin() as c:
+    with eng.begin() as c:
         c.execute(sql_delete(t).where(t.c.skey == key))
         c.execute(t.insert().values(skey=key, value=value))
 
