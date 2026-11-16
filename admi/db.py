@@ -32,6 +32,13 @@ def _database_url() -> str:
     env = os.environ.get("DATABASE_URL")
     if env:
         return env
+    try:
+        import streamlit as st  # type: ignore
+        val = st.secrets.get("DATABASE_URL") if hasattr(st, "secrets") else None
+        if val:
+            return str(val)
+    except Exception:
+        pass
     return "sqlite:///" + (DATA_DIR / "admi.db").as_posix()
 
 
