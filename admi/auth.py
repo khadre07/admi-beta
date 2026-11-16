@@ -18,7 +18,13 @@ import os
 from .data import DATA_DIR
 
 USERS_FILE = DATA_DIR / "users.json"
-ROLES = ["admin", "operator", "viewer"]
+# Hiérarchie des rôles (plus privilégié d'abord) :
+#   root     : propriétaire technique — gère admins, voit observabilité / logs.
+#   admin    : accès complet aux données et aux réglages.
+#   operator : saisie des données.
+#   viewer   : lecture seule.
+ROLES = ["root", "admin", "operator", "viewer"]
+PRIVILEGED_ROLES = {"root", "admin"}
 
 
 def _hash(password: str, salt: bytes) -> str:
@@ -143,7 +149,9 @@ def set_role(username: str, role: str) -> tuple[bool, str]:
     users = _load()
     if username not in users:
         return False, "Utilisateur introuvable."
-    if users[username].get("role") == "admin" and role != "admin" and _count_admins(users) <= 1:
+    was_priv = users[username].get("role") in PRIVILEGED_ROLES
+    becomes_priv = role in PRIVILEGED_ROLES
+    if was_priv and not becomes_priv and _count_privileged(users) <= 1:
         return False, "Impossible de rétrograder le dernier administrateur."
     users[username]["role"] = role
     _save(users)
@@ -154,15 +162,21 @@ def delete_user(username: str) -> tuple[bool, str]:
     users = _load()
     if username not in users:
         return False, "Utilisateur introuvable."
-    if users[username].get("role") == "admin" and _count_admins(users) <= 1:
+    if users[username].get("role") in PRIVILEGED_ROLES and _count_privileged(users) <= 1:
         return False, "Impossible de supprimer le dernier administrateur."
     del users[username]
     _save(users)
     return True, "Utilisateur supprimé."
 
 
+def _count_privileged(users: dict) -> int:
+    """Nombre de comptes capables de reprendre la main (root + admin)."""
+    return sum(1 for u in users.values() if u.get("role") in PRIVILEGED_ROLES)
+
+
+# Alias historique — préserve la compatibilité si un code tiers l'appelle.
 def _count_admins(users: dict) -> int:
-    return sum(1 for u in users.values() if u.get("role") == "admin")
+    return _count_privileged(users)
 
 
 # ---------------------------------------------------------------------------

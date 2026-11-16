@@ -147,7 +147,11 @@ def can_edit():
 
 
 def is_admin():
-    return _role() == "admin"
+    return _role() in ("admin", "root")
+
+
+def is_root():
+    return _role() == "root"
 
 
 def _maybe_alert(subject, message, details=None):
@@ -1591,14 +1595,20 @@ def view_users(db):
     section_title("Comptes utilisateurs")
     st.dataframe(pd.DataFrame([{"Identifiant": u, "Rôle": r} for u, r in users.items()]),
                  width="stretch", hide_index=True)
-    st.caption("Rôles — **admin** : tout · **operator** : saisie des données · **viewer** : lecture seule.")
+    st.caption("Rôles — **root** : technique · **admin** : tout · "
+               "**operator** : saisie · **viewer** : lecture seule.")
+
+    # Seul le root peut créer/modifier d'autres root. Un admin ne voit que
+    # [admin, operator, viewer] et ne peut pas éditer un compte root existant.
+    role_choices = auth.ROLES if is_root() else [r for r in auth.ROLES if r != "root"]
 
     section_title("Ajouter un utilisateur")
     with st.form("add_user_form", clear_on_submit=True):
         c = st.columns([2, 2, 1.4, 1.1])
         nu = c[0].text_input("Identifiant")
         npw = c[1].text_input("Mot de passe", type="password")
-        nrole = c[2].selectbox("Rôle", auth.ROLES, index=auth.ROLES.index("operator"))
+        default_role = "operator" if "operator" in role_choices else role_choices[-1]
+        nrole = c[2].selectbox("Rôle", role_choices, index=role_choices.index(default_role))
         if c[3].form_submit_button("Ajouter", type="primary"):
             ok, msg = auth.create_user(nu, npw, nrole)
             (st.success if ok else st.error)(msg)
@@ -1606,10 +1616,20 @@ def view_users(db):
                 st.rerun()
 
     section_title("Modifier / supprimer")
-    target = st.selectbox("Utilisateur", list(users.keys()), key="user_target")
+    # Un admin ne voit pas les comptes root dans le selecteur : interdiction d'y toucher.
+    editable = {u: r for u, r in users.items() if is_root() or r != "root"}
+    if not editable:
+        st.info(T("Aucun compte modifiable à votre niveau."))
+        return
+    target = st.selectbox("Utilisateur", list(editable.keys()), key="user_target")
     if target:
+        current_role = users[target]
+        # Choix de rôles : un admin ne peut pas promouvoir en root.
+        allowed = role_choices if current_role in role_choices else [current_role]
         cc = st.columns([1.6, 1, 1.6, 1, 1.2])
-        role = cc[0].selectbox("Rôle", auth.ROLES, index=auth.ROLES.index(users[target]), key="user_role")
+        role = cc[0].selectbox("Rôle", allowed,
+                               index=allowed.index(current_role) if current_role in allowed else 0,
+                               key="user_role")
         if cc[1].button("Appliquer", key="user_role_btn"):
             ok, msg = auth.set_role(target, role)
             (st.success if ok else st.error)(msg)
@@ -1627,6 +1647,71 @@ def view_users(db):
             (st.success if ok else st.error)(msg)
             if ok:
                 st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# SECTION : Observabilité (root uniquement)
+# ---------------------------------------------------------------------------
+def view_observability(db):
+    if not is_root():
+        st.error(T("Accès réservé au compte root."))
+        return
+    section_title("Supervision technique")
+
+    # --- Build & backend ---------------------------------------------------
+    sha = _build_sha() or "—"
+    try:
+        from admi import db as _dbmod
+        backend = _dbmod.backend_label()
+        db_url = _dbmod._database_url()
+    except Exception:
+        backend, db_url = "?", "?"
+    # Masque le mot de passe si l'URL en contient un.
+    import re as _re
+    masked = _re.sub(r"(://[^:]+:)([^@]+)(@)", r"\1***\3", db_url or "")
+
+    c = st.columns(4)
+    with c[0]: kpi_card("Build (commit)", sha, color=THEME["accent2"], value_size=18)
+    with c[1]: kpi_card("Backend DB", backend, color=THEME["success"], value_size=18)
+    with c[2]: kpi_card("Utilisateurs", fmt_num(len(auth.list_users())), color=THEME["accent"])
+    with c[3]: kpi_card("Admins/Root", fmt_num(
+        sum(1 for r in auth.list_users().values() if r in auth.PRIVILEGED_ROLES)),
+        color=THEME["warn"])
+
+    st.caption(f"DATABASE_URL : `{masked}`")
+    st.write("")
+
+    # --- Volumétrie BDD ----------------------------------------------------
+    section_title("Volumétrie")
+    rows = [
+        {T("Entité"): T("Machines"), T("Lignes"): len(db.machines)},
+        {T("Entité"): T("Arrêts"), T("Lignes"): len(db.arrets)},
+        {T("Entité"): T("Interventions"), T("Lignes"): len(db.interventions)},
+        {T("Entité"): T("Énergie"), T("Lignes"): len(db.energie)},
+        {T("Entité"): T("Planning"), T("Lignes"): len(db.planning)},
+        {T("Entité"): T("Pièces"), T("Lignes"): len(db.pieces)},
+        {T("Entité"): T("Mouvements"), T("Lignes"): len(db.mouvements)},
+    ]
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+    st.write("")
+
+    # --- Comptes & rôles ---------------------------------------------------
+    section_title("Comptes & rôles")
+    users_tbl = [{T("Identifiant"): u, T("Rôle"): r} for u, r in auth.list_users().items()]
+    st.dataframe(pd.DataFrame(users_tbl), width="stretch", hide_index=True)
+    st.caption(T("Pour consulter les logs d'exécution (crashs, exceptions) : "
+                 "Streamlit Cloud → Manage app → logs en bas de page. Les logs ne "
+                 "sont pas exposés dans l'app par sécurité."))
+
+    # --- Session en cours --------------------------------------------------
+    section_title("Session")
+    import datetime as _dt
+    st.write(pd.DataFrame([{
+        T("Utilisateur"): st.session_state.get("user", "—"),
+        T("Rôle"): st.session_state.get("role", "—"),
+        T("Langue"): st.session_state.get("lang", "fr"),
+        T("Horodatage"): _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }]))
 
 
 # ---------------------------------------------------------------------------
@@ -1710,6 +1795,8 @@ def _nav():
     if is_admin():
         sections["Alertes"] = view_alerts
         sections["Utilisateurs"] = view_users
+    if is_root():
+        sections["Observabilité"] = view_observability
     subtitles = {
         "Tableau de bord": "Vue d'ensemble des indicateurs de maintenance",
         "Planning": "Calendrier des interventions planifiées (mois / année)",
@@ -1723,6 +1810,7 @@ def _nav():
         "Paramètres": "Heures de travail de l'usine par département",
         "Alertes": "Alertes e-mail / SMS en cas de panne",
         "Utilisateurs": "Gestion des comptes et des rôles",
+        "Observabilité": "Supervision technique (root uniquement)",
     }
     return sections, subtitles
 
@@ -2229,6 +2317,28 @@ def _hide_chrome_css():
     </style>""", unsafe_allow_html=True)
 
 
+def _hide_app_chrome_css():
+    """Masque le chrome Streamlit (menu « ⋮ », Deploy/Share, footer) pour les users.
+    Le propriétaire du déploiement garde « Manage app » en bas à droite — Streamlit
+    ne l'injecte que pour les comptes authentifiés sur share.streamlit.io, donc
+    le client ne le voit pas de son côté.
+    """
+    st.markdown("""<style>
+      /* Menu hamburger, Deploy, Share, settings */
+      [data-testid="stToolbar"], [data-testid="stDecoration"],
+      [data-testid="stStatusWidget"], [data-testid="stMainMenu"],
+      header[data-testid="stHeader"] button[kind="headerNoPadding"],
+      header[data-testid="stHeader"] [data-testid="stBaseButton-headerNoPadding"] {
+        display: none !important; visibility: hidden !important;
+      }
+      /* Footer « Made with Streamlit » */
+      footer, [data-testid="stFooter"] { display:none !important; }
+      /* Le header lui-même est un bandeau transparent : on réduit sa place */
+      header[data-testid="stHeader"] { height: 0 !important; background: transparent !important; }
+      .block-container { padding-top: 1rem !important; }
+    </style>""", unsafe_allow_html=True)
+
+
 def render_license_screen():
     _hide_chrome_css()
     _lang_toggle()
@@ -2358,6 +2468,7 @@ def main():
         ph.empty()
 
     db = get_db()
+    _hide_app_chrome_css()   # cache menu Streamlit, Deploy/Share, footer pour les users
     if not st.session_state.get("_usage_checked"):
         check_machine_usage_alerts(db)
         st.session_state["_usage_checked"] = True
