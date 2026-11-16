@@ -25,29 +25,60 @@ def _hash(password: str, salt: bytes) -> str:
     return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 120_000).hex()
 
 
+_SETTINGS_KEY = "users"
+
+
 def _save(users: dict) -> None:
+    try:
+        from . import db
+        db.set_setting(_SETTINGS_KEY, users)
+        return
+    except Exception:
+        pass
     USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
     USERS_FILE.write_text(json.dumps(users), encoding="utf-8")
 
 
-def _load() -> dict:
+def _load_from_db() -> dict | None:
+    try:
+        from . import db
+        s = db.get_settings()
+        u = s.get(_SETTINGS_KEY)
+        if isinstance(u, dict) and u:
+            return u
+    except Exception:
+        return None
+    return None
+
+
+def _load_from_file() -> dict | None:
     if USERS_FILE.exists():
         try:
-            users = json.loads(USERS_FILE.read_text(encoding="utf-8"))
-            # migration : anciens comptes sans rôle -> admin
-            changed = False
-            for u in users.values():
-                if "role" not in u:
-                    u["role"] = "admin"
-                    changed = True
-            if changed:
-                _save(users)
-            return users
+            return json.loads(USERS_FILE.read_text(encoding="utf-8"))
         except Exception:
-            pass
-    salt = os.urandom(16)
-    users = {"admin": {"salt": salt.hex(), "hash": _hash("admin", salt), "role": "admin"}}
-    _save(users)
+            return None
+    return None
+
+
+def _load() -> dict:
+    users = _load_from_db()
+    if users is None:
+        # 1er démarrage : migre un ancien fichier local s'il existe, sinon crée admin/admin.
+        users = _load_from_file()
+        if users is None:
+            salt = os.urandom(16)
+            users = {"admin": {"salt": salt.hex(), "hash": _hash("admin", salt), "role": "admin"}}
+        _save(users)
+        return users
+
+    # migration : anciens comptes sans rôle -> admin
+    changed = False
+    for u in users.values():
+        if "role" not in u:
+            u["role"] = "admin"
+            changed = True
+    if changed:
+        _save(users)
     return users
 
 
