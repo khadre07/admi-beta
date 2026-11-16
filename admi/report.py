@@ -59,6 +59,25 @@ def _dept_rows(arrets, intervs, energie):
     return [(d, ad.get(d["id"], 0), cd.get(d["id"], 0), ed.get(d["id"], 0)) for d in DEPARTEMENTS]
 
 
+def _branding(db) -> tuple[str, bytes | None]:
+    """Retourne (nom_entreprise, logo_bytes) depuis db.settings.branding.
+
+    Silencieux : si pas de marque configurée ou blob corrompu, renvoie ('', None)
+    et le rapport retombe sur la charte AMI standard.
+    """
+    import base64 as _b64
+    br = (db.settings.get("branding") if hasattr(db, "settings") else None) or {}
+    name = (br.get("company_name") or "").strip()
+    b64 = br.get("logo_png_b64") or ""
+    logo = None
+    if b64:
+        try:
+            logo = _b64.b64decode(b64)
+        except Exception:
+            logo = None
+    return name, logo
+
+
 # ===========================================================================
 # Rapport HTML autonome (Plotly interactif)
 # ===========================================================================
@@ -96,6 +115,28 @@ def build_html_report(db, periode, annee, mois, dept) -> bytes:
                   f"<th>{_t('Coût maintenance')}</th><th>{_t('Énergie (kWh)')}</th></tr></thead>"
                   f"<tbody>{rows}</tbody></table>")
 
+    # Branding client (en-tête + pied) — silencieux si pas configuré.
+    import base64 as _b64
+    import html as _html_mod
+    client_name, client_logo = _branding(db)
+    client_logo_html = ""
+    client_footer_html = ""
+    if client_name or client_logo:
+        safe = _html_mod.escape(client_name or "")
+        logo_tag = ""
+        if client_logo:
+            b64 = _b64.b64encode(client_logo).decode("ascii")
+            logo_tag = (f'<img src="data:image/png;base64,{b64}" alt="{safe}" '
+                        f'style="max-height:46px;max-width:120px;object-fit:contain;'
+                        f'background:#fff;border-radius:6px;padding:4px;"/>')
+        client_logo_html = (
+            f'<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;'
+            f'background:{THEME["panel2"]};border:1px solid {THEME["border"]};'
+            f'border-radius:10px;margin-bottom:14px">'
+            f'{logo_tag}<div style="font-weight:700;letter-spacing:.04em;font-size:17px">{safe}</div>'
+            f'</div>')
+        client_footer_html = f' · {safe}' if safe else ''
+
     html = f"""<!doctype html><html lang="{i18n.get_lang()}"><head><meta charset="utf-8">
 <title>Rapport AMI — {_period_label(periode, annee, mois)}</title>
 <style>
@@ -116,6 +157,7 @@ def build_html_report(db, periode, annee, mois, dept) -> bytes:
   .foot{{margin-top:20px;color:{THEME['muted2']};font-size:11px;text-align:center;}}
   @media print{{ body{{background:#fff;color:#111;}} .card,.kpi{{border-color:#ccc;background:#fff;}} }}
 </style></head><body>
+  {client_logo_html}
   <div class="head">
     <div><div class="brand"><span class="d">●</span> AMI</div>
       <div style="color:{THEME['muted']};font-size:13px">{_t('Rapport de maintenance industrielle')}</div></div>
@@ -126,7 +168,7 @@ def build_html_report(db, periode, annee, mois, dept) -> bytes:
   <div class="card"><div class="ct">{_t('Synthèse par département')}</div>{table_html}</div>
   <div class="grid2">{''.join(chart_html[:4])}</div>
   <div class="grid2">{''.join(chart_html[4:])}</div>
-  <div class="foot">AMI — {_t('Analyse de Maintenance Industrielle')} · {_t('Rapport de maintenance industrielle · rapport généré automatiquement')}</div>
+  <div class="foot">AMI — {_t('Analyse de Maintenance Industrielle')} · {_t('Rapport de maintenance industrielle · rapport généré automatiquement')}{client_footer_html}</div>
 </body></html>"""
     return html.encode("utf-8")
 
@@ -352,7 +394,7 @@ def build_pdf_report(db, periode, annee, mois, dept) -> bytes:
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import mm
     from reportlab.platypus import (SimpleDocTemplate, Table, TableStyle,
-                                    Paragraph, Spacer)
+                                    Paragraph, Spacer, Image)
 
     k, arrets, intervs, energie = _gather(db, periode, annee, mois, dept)
     accent = _rl_color(THEME["accent"])
@@ -363,11 +405,66 @@ def build_pdf_report(db, periode, annee, mois, dept) -> bytes:
     h3 = ParagraphStyle("h3", parent=styles["Heading4"], textColor=colors.HexColor("#334155"), spaceBefore=4)
     small = ParagraphStyle("sm", parent=styles["Normal"], textColor=colors.grey, fontSize=9)
 
+    client_name, client_logo = _branding(db)
+
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=16 * mm, bottomMargin=14 * mm,
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=16 * mm, bottomMargin=16 * mm,
                             leftMargin=16 * mm, rightMargin=16 * mm, title="Rapport AMI")
+
+    def _page_decorations(canvas, doc_):
+        """Dessine le bandeau client en haut et une mention en pied à chaque page."""
+        if not (client_name or client_logo):
+            return
+        canvas.saveState()
+        page_w, page_h = A4
+        # --- Pied de page : nom client centré ---
+        if client_name:
+            canvas.setFont("Helvetica", 8)
+            canvas.setFillColor(colors.HexColor("#64748B"))
+            canvas.drawCentredString(page_w / 2, 8 * mm,
+                                     f"{client_name} · AMI")
+        # --- En-tête : petit logo + nom en haut à droite (hors marge du story) ---
+        y = page_h - 10 * mm
+        if client_logo:
+            try:
+                from reportlab.lib.utils import ImageReader
+                img = ImageReader(io.BytesIO(client_logo))
+                iw, ih = img.getSize()
+                ratio = min(14 * mm / iw, 10 * mm / ih)
+                w, h = iw * ratio, ih * ratio
+                canvas.drawImage(img, page_w - 16 * mm - w, y - h,
+                                 width=w, height=h, mask="auto")
+            except Exception:
+                pass
+        canvas.restoreState()
+
     dept_name = _t("Tous les départements") if dept == "all" else i18n.dept_label(dept, dep(dept)["nom"])
-    story = [
+
+    # Bandeau client en tête du story (sur la 1ère page, au-dessus du titre).
+    story = []
+    if client_name or client_logo:
+        hdr_cells = []
+        if client_logo:
+            try:
+                img = Image(io.BytesIO(client_logo))
+                img._restrictSize(28 * mm, 14 * mm)
+                hdr_cells.append(img)
+            except Exception:
+                hdr_cells.append(Paragraph("", small))
+        else:
+            hdr_cells.append(Paragraph("", small))
+        hdr_cells.append(Paragraph(
+            f'<font size=13 color="#1A2438"><b>{client_name}</b></font>', small))
+        hdr = Table([hdr_cells], colWidths=[32 * mm, 140 * mm])
+        hdr.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("BOX", (0, 0), (-1, -1), 0.4, colors.HexColor("#CBD5E1")),
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+            ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 8)]))
+        story += [hdr, Spacer(1, 4 * mm)]
+
+    story += [
         Paragraph(_t("AMI — Rapport de maintenance industrielle"), h1),
         Paragraph(f"{_t('Période :')} <b>{_period_label(periode, annee, mois)}</b> &nbsp;·&nbsp; "
                   f"{_t('Périmètre :')} <b>{dept_name}</b> &nbsp;·&nbsp; "
@@ -465,5 +562,5 @@ def build_pdf_report(db, periode, annee, mois, dept) -> bytes:
     story.append(_kv_table([(str(r["year"]), f"{_fmt(r['disponibilite'], 1)} %") for r in trend],
                            per_row=3))
 
-    doc.build(story)
+    doc.build(story, onFirstPage=_page_decorations, onLaterPages=_page_decorations)
     return buf.getvalue()

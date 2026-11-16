@@ -1492,6 +1492,7 @@ def _settings_branding(db):
                     st.error(err)
                 else:
                     st.session_state["brand_draft_logo"] = data
+                    st.session_state["brand_logo_cleared"] = False
                     st.success(T("Logo récupéré — vérifie la preview à droite."))
                     st.rerun()
 
@@ -1503,11 +1504,15 @@ def _settings_branding(db):
                 st.error(T("Image trop grosse (>2 Mo)."))
             else:
                 st.session_state["brand_draft_logo"] = data
+                st.session_state["brand_logo_cleared"] = False
                 st.session_state["brand_upload_last"] = up.name
                 st.rerun()
 
         if bc2.button(T("🗑 Retirer le logo"), width="stretch", key="brand_clear_logo"):
+            # Flag explicite : la preview doit afficher le placeholder, pas
+            # retomber sur le logo encore en BDD.
             st.session_state["brand_draft_logo"] = None
+            st.session_state["brand_logo_cleared"] = True
             st.rerun()
 
         st.write("")
@@ -1517,18 +1522,24 @@ def _settings_branding(db):
             clean_name = name.strip()[:80]
             clean_domain = domain.strip()[:120]
             payload = {"company_name": clean_name, "domain": clean_domain, "logo_png_b64": ""}
+            cleared = st.session_state.get("brand_logo_cleared", False)
             logo = st.session_state.get("brand_draft_logo")
-            if logo:
+            if logo and not cleared:
                 payload["logo_png_b64"] = base64.b64encode(logo).decode("ascii")
+            elif not cleared:
+                # Pas de modif explicite du logo : on garde l'ancien stocké en BDD.
+                payload["logo_png_b64"] = br.get("logo_png_b64") or ""
             db.settings["branding"] = payload
             save_settings(db)
             # Nettoie les drafts, la prochaine ouverture lit la BDD.
-            for k in ("brand_draft_name", "brand_draft_domain", "brand_draft_logo", "brand_upload_last"):
+            for k in ("brand_draft_name", "brand_draft_domain", "brand_draft_logo",
+                      "brand_upload_last", "brand_logo_cleared"):
                 st.session_state.pop(k, None)
             st.success(T("Marque enregistrée — visible dès le prochain rafraîchissement."))
             st.rerun()
         if a2.button(T("Annuler"), width="stretch", key="brand_cancel"):
-            for k in ("brand_draft_name", "brand_draft_domain", "brand_draft_logo", "brand_upload_last"):
+            for k in ("brand_draft_name", "brand_draft_domain", "brand_draft_logo",
+                      "brand_upload_last", "brand_logo_cleared"):
                 st.session_state.pop(k, None)
             st.rerun()
 
@@ -1539,7 +1550,10 @@ def _settings_branding(db):
         preview_name = (name or "").strip() or T("(Nom de l'entreprise)")
         safe_name = _html.escape(preview_name)
         logo_html = ""
-        logo_bytes = st.session_state.get("brand_draft_logo") or _branding_logo_bytes(br)
+        if st.session_state.get("brand_logo_cleared"):
+            logo_bytes = None  # user a cliqué "Retirer le logo" : la preview reflète le choix
+        else:
+            logo_bytes = st.session_state.get("brand_draft_logo") or _branding_logo_bytes(br)
         if logo_bytes:
             b64 = base64.b64encode(logo_bytes).decode("ascii")
             logo_html = (f'<img src="data:image/png;base64,{b64}" '
