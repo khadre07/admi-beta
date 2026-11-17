@@ -1513,21 +1513,26 @@ def _settings_branding(db):
                 st.rerun()
 
         if bc2.button(T("🗑 Retirer le logo"), width="stretch", key="brand_clear_logo"):
-            # Suppression IMMÉDIATE : on vide le logo en base pour qu'il
-            # disparaisse de la sidebar, du header, du login et des rapports
-            # sans attendre un clic sur Enregistrer.
+            # Suppression IMMÉDIATE du logo + capture des champs courants pour
+            # ne pas perdre le nom/domaine en cours de saisie.
             br_now = db.settings.get("branding") or {}
-            br_now["logo_png_b64"] = ""
-            # Préserve le nom/domaine si déjà en base ; sinon applique le brouillon.
-            if not br_now.get("company_name") and name:
-                br_now["company_name"] = name.strip()[:80]
-            if not br_now.get("domain") and domain:
-                br_now["domain"] = domain.strip()[:120]
-            db.settings["branding"] = br_now
+            # Priorité au champ visible à l'écran > valeur DB > chaîne vide.
+            new_name = (name.strip() if name else "")[:80] or (br_now.get("company_name") or "").strip()[:80]
+            new_domain = (domain.strip() if domain else "")[:120] or (br_now.get("domain") or "").strip()[:120]
+            db.settings["branding"] = {
+                "company_name": new_name,
+                "domain": new_domain,
+                "logo_png_b64": "",
+            }
             save_settings(db)
-            for k in ("brand_draft_logo", "brand_upload_last", "brand_logo_cleared"):
+            # Nettoie TOUS les drafts pour que le prochain rendu lise la BDD à jour.
+            for k in ("brand_draft_logo", "brand_draft_name", "brand_draft_domain",
+                      "brand_upload_last", "brand_logo_cleared"):
                 st.session_state.pop(k, None)
-            st.success(T("Logo supprimé partout (sidebar, en-tête, rapports)."))
+            if new_name:
+                st.success(T("Logo supprimé — le nom « {n} » est conservé.").format(n=new_name))
+            else:
+                st.success(T("Logo supprimé."))
             st.rerun()
 
         st.write("")
