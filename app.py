@@ -1513,10 +1513,21 @@ def _settings_branding(db):
                 st.rerun()
 
         if bc2.button(T("🗑 Retirer le logo"), width="stretch", key="brand_clear_logo"):
-            # Flag explicite : la preview doit afficher le placeholder, pas
-            # retomber sur le logo encore en BDD.
-            st.session_state["brand_draft_logo"] = None
-            st.session_state["brand_logo_cleared"] = True
+            # Suppression IMMÉDIATE : on vide le logo en base pour qu'il
+            # disparaisse de la sidebar, du header, du login et des rapports
+            # sans attendre un clic sur Enregistrer.
+            br_now = db.settings.get("branding") or {}
+            br_now["logo_png_b64"] = ""
+            # Préserve le nom/domaine si déjà en base ; sinon applique le brouillon.
+            if not br_now.get("company_name") and name:
+                br_now["company_name"] = name.strip()[:80]
+            if not br_now.get("domain") and domain:
+                br_now["domain"] = domain.strip()[:120]
+            db.settings["branding"] = br_now
+            save_settings(db)
+            for k in ("brand_draft_logo", "brand_upload_last", "brand_logo_cleared"):
+                st.session_state.pop(k, None)
+            st.success(T("Logo supprimé partout (sidebar, en-tête, rapports)."))
             st.rerun()
 
         st.write("")
@@ -1652,11 +1663,77 @@ def view_users(db):
 # ---------------------------------------------------------------------------
 # SECTION : Observabilité (root uniquement)
 # ---------------------------------------------------------------------------
+@st.cache_resource
+def _runtime_counters():
+    """Compteurs globaux partagés entre sessions (reset au reboot du process)."""
+    return {"start_ts": time.time(), "reruns": 0, "logins": 0, "errors": 0}
+
+
+def _probe_memory():
+    """Mémoire process + système. Linux via /proc, fallback resource ailleurs."""
+    out = {}
+    # Process (Linux)
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    out["rss_mb"] = round(int(line.split()[1]) / 1024, 1)
+                elif line.startswith("VmSize:"):
+                    out["vsize_mb"] = round(int(line.split()[1]) / 1024, 1)
+    except Exception:
+        pass
+    # Process (fallback resource — macOS, BSD)
+    if "rss_mb" not in out:
+        try:
+            import resource as _res
+            r = _res.getrusage(_res.RUSAGE_SELF)
+            maxrss = r.ru_maxrss
+            out["rss_mb"] = round(maxrss / (1024 * 1024 if sys.platform == "darwin" else 1024), 1)
+        except Exception:
+            pass
+    # Système (Linux)
+    try:
+        with open("/proc/meminfo") as f:
+            data = f.read()
+        import re as _re2
+        def _grab(k):
+            m = _re2.search(rf"^{k}:\s+(\d+) kB", data, _re2.MULTILINE)
+            return round(int(m.group(1)) / 1024, 1) if m else None
+        out["sys_total_mb"] = _grab("MemTotal")
+        out["sys_avail_mb"] = _grab("MemAvailable")
+    except Exception:
+        pass
+    # CPU time
+    try:
+        import resource as _res
+        r = _res.getrusage(_res.RUSAGE_SELF)
+        out["cpu_user_s"] = round(r.ru_utime, 1)
+        out["cpu_sys_s"] = round(r.ru_stime, 1)
+    except Exception:
+        pass
+    return out
+
+
+def _fmt_duration(sec: float) -> str:
+    sec = int(sec)
+    d, sec = divmod(sec, 86400)
+    h, sec = divmod(sec, 3600)
+    m, sec = divmod(sec, 60)
+    if d: return f"{d}j {h}h {m}min"
+    if h: return f"{h}h {m}min"
+    if m: return f"{m}min {sec}s"
+    return f"{sec}s"
+
+
 def view_observability(db):
     if not is_root():
         st.error(T("Accès réservé au compte root."))
         return
     section_title("Supervision technique")
+
+    counters = _runtime_counters()
+    counters["reruns"] = counters.get("reruns", 0) + 1
+    t_start = time.time()
 
     # --- Build & backend ---------------------------------------------------
     sha = _build_sha() or "—"
@@ -1666,23 +1743,77 @@ def view_observability(db):
         db_url = _dbmod._database_url()
     except Exception:
         backend, db_url = "?", "?"
-    # Masque le mot de passe si l'URL en contient un.
     import re as _re
     masked = _re.sub(r"(://[^:]+:)([^@]+)(@)", r"\1***\3", db_url or "")
 
     c = st.columns(4)
     with c[0]: kpi_card("Build (commit)", sha, color=THEME["accent2"], value_size=18)
     with c[1]: kpi_card("Backend DB", backend, color=THEME["success"], value_size=18)
-    with c[2]: kpi_card("Utilisateurs", fmt_num(len(auth.list_users())), color=THEME["accent"])
-    with c[3]: kpi_card("Admins/Root", fmt_num(
-        sum(1 for r in auth.list_users().values() if r in auth.PRIVILEGED_ROLES)),
-        color=THEME["warn"])
+    uptime_s = time.time() - counters.get("start_ts", time.time())
+    with c[2]: kpi_card("Uptime", _fmt_duration(uptime_s), color=THEME["accent"], value_size=18)
+    with c[3]: kpi_card("Reruns", fmt_num(counters.get("reruns", 0)), color=THEME["warn"])
 
     st.caption(f"DATABASE_URL : `{masked}`")
     st.write("")
 
+    # --- Ressources système -----------------------------------------------
+    section_title("Ressources — CPU & mémoire")
+    mem = _probe_memory()
+    rss_mb = mem.get("rss_mb")
+    sys_total = mem.get("sys_total_mb")
+    sys_avail = mem.get("sys_avail_mb")
+    # Streamlit Cloud free tier = 1 GB RAM par app.
+    sl_quota_mb = 1024
+    rss_pct = (rss_mb / sl_quota_mb * 100) if rss_mb else None
+
+    m = st.columns(4)
+    with m[0]:
+        kpi_card("Mémoire process (RSS)",
+                 f"{rss_mb} Mo" if rss_mb is not None else "—",
+                 color=THEME["danger"] if (rss_pct and rss_pct > 80)
+                 else THEME["warn"] if (rss_pct and rss_pct > 60)
+                 else THEME["success"],
+                 value_size=18)
+    with m[1]:
+        kpi_card("% du quota 1 Go",
+                 f"{round(rss_pct, 1)} %" if rss_pct is not None else "—",
+                 color=THEME["accent"], value_size=18)
+    with m[2]:
+        kpi_card("RAM système totale",
+                 f"{sys_total} Mo" if sys_total else "—",
+                 color=THEME["accent2"], value_size=18)
+    with m[3]:
+        kpi_card("RAM système dispo",
+                 f"{sys_avail} Mo" if sys_avail else "—",
+                 color=THEME["success"] if (sys_avail and sys_total and sys_avail / sys_total > .3)
+                 else THEME["warn"], value_size=18)
+
+    cpu_u = mem.get("cpu_user_s")
+    cpu_s = mem.get("cpu_sys_s")
+    vsize = mem.get("vsize_mb")
+    c2 = st.columns(4)
+    with c2[0]:
+        kpi_card("CPU user (cumulé)",
+                 f"{cpu_u}s" if cpu_u is not None else "—",
+                 color=THEME["muted"], value_size=16)
+    with c2[1]:
+        kpi_card("CPU sys (cumulé)",
+                 f"{cpu_s}s" if cpu_s is not None else "—",
+                 color=THEME["muted"], value_size=16)
+    with c2[2]:
+        kpi_card("Mémoire virtuelle (VSize)",
+                 f"{vsize} Mo" if vsize else "—",
+                 color=THEME["muted"], value_size=16)
+    with c2[3]:
+        kpi_card("Reruns/min",
+                 f"{round(counters['reruns'] / max(uptime_s / 60, 1), 1)}",
+                 color=THEME["muted"], value_size=16)
+    st.caption(T("Quota Streamlit Community Cloud ≈ 1 Go RAM par app. "
+                 "L'app redémarre automatiquement si on dépasse — données sauves dans Supabase."))
+    st.write("")
+
     # --- Volumétrie BDD ----------------------------------------------------
-    section_title("Volumétrie")
+    section_title("Volumétrie base de données")
     rows = [
         {T("Entité"): T("Machines"), T("Lignes"): len(db.machines)},
         {T("Entité"): T("Arrêts"), T("Lignes"): len(db.arrets)},
@@ -1702,16 +1833,22 @@ def view_observability(db):
     st.caption(T("Pour consulter les logs d'exécution (crashs, exceptions) : "
                  "Streamlit Cloud → Manage app → logs en bas de page. Les logs ne "
                  "sont pas exposés dans l'app par sécurité."))
+    st.write("")
 
     # --- Session en cours --------------------------------------------------
-    section_title("Session")
+    section_title("Session courante")
     import datetime as _dt
+    elapsed_ms = round((time.time() - t_start) * 1000, 1)
     st.write(pd.DataFrame([{
         T("Utilisateur"): st.session_state.get("user", "—"),
         T("Rôle"): st.session_state.get("role", "—"),
         T("Langue"): st.session_state.get("lang", "fr"),
         T("Horodatage"): _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        T("Rendu (ms)"): elapsed_ms,
     }]))
+    st.caption(T("💡 Streamlit redémarre le conteneur s'il dépasse 1 Go. Pour la beta, "
+                 "surveille surtout la jauge « % du quota ». Au-delà de 80 %, c'est "
+                 "souvent lié à un rapport PDF simultané — rien de grave, ça se relance."))
 
 
 # ---------------------------------------------------------------------------
