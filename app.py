@@ -2716,9 +2716,10 @@ def main():
             except Exception:
                 pass
             st.rerun()
-        sha = _build_sha()
-        if sha:
-            st.caption(f"build `{sha}`")
+        if is_root():
+            sha = _build_sha()
+            if sha:
+                st.caption(f"build `{sha}`")
 
     # Bannière de mise à jour (best-effort, vérifiée une fois par session)
     if "update_info" not in st.session_state:
