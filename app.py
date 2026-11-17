@@ -904,16 +904,20 @@ def view_planning(db):
 
     state = st_calendar(events=_planning_events(db), options=CAL_OPTIONS,
                         custom_css=CAL_CSS, key="planning_cal")
-    # n'agir que sur une nouvelle interaction (le composant renvoie sa dernière valeur à chaque rerun)
+    # N'agir que sur une NOUVELLE interaction, et uniquement sur des gestes qui
+    # expriment clairement une intention : clic sur un évènement (édition) ou
+    # drag-sélection d'une plage (nouvelle intervention). Un simple clic sur
+    # une date, c'est de la navigation : on n'ouvre PAS le dialog.
     sig = json.dumps(state, sort_keys=True, default=str) if state else ""
     if state and sig != st.session_state.get("planning_sig"):
         st.session_state.planning_sig = sig
         cb = state.get("callback")
         if cb == "eventClick":
             st.session_state.plan_target = ("edit", state["eventClick"]["event"]["id"])
-        elif cb in ("dateClick", "select"):
-            payload = state.get("dateClick") or state.get("select")
-            st.session_state.plan_target = ("new", str(payload["date"])[:10])
+        elif cb == "select":
+            payload = state.get("select") or {}
+            if payload.get("date"):
+                st.session_state.plan_target = ("new", str(payload["date"])[:10])
 
     st.markdown(
         '<div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:12px">' +
